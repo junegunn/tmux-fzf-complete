@@ -331,6 +331,29 @@ def next_provider(current, providers)
   providers[(providers.index(current) + 1) % providers.length]
 end
 
+# What fzf is told to do when a provider is switched to. The list is reloaded in
+# place, so the pane fzf runs in stays open, and the cursor goes back to the top
+# as the items are not the same.
+def switch_actions(provider, state, providers)
+  write_state(state, provider, providers)
+  actions = ["change-border-label(#{label(provider, ENV.fetch('FZF_QUERY', ''))})",
+             "change-header(#{header(provider, providers)})"]
+  actions +=
+    if (command = preview(provider))
+      ["change-preview(#{command})", 'change-preview-window(right,50%)']
+    else
+      ['change-preview-window(hidden)']
+    end
+  actions << "reload(#{SCRIPT.shellescape} list #{state.shellescape})" << 'first'
+  actions.join('+')
+end
+
+def open_action(current, state)
+  return nil unless OPENABLE.include?(current)
+
+  "execute(#{SCRIPT.shellescape} open #{state.shellescape} {})"
+end
+
 # The provider in use, and the ones to offer
 def read_state(path)
   current, providers = File.read(path).lines.map(&:strip)
@@ -348,7 +371,7 @@ when 'open-action'
   # Nothing is printed for a provider whose items cannot be opened, so that
   # CTRL-O does not run a process and make fzf flicker for nothing
   current, = read_state(ARGV[1])
-  puts "execute(#{SCRIPT.shellescape} open #{ARGV[1].shellescape} {})" if OPENABLE.include?(current)
+  puts open_action(current, ARGV[1])
   exit
 when 'open'
   # CTRL-O, which fzf runs with the tty, so an editor can take the pane over
@@ -380,20 +403,19 @@ when 'switch'
     end
   exit unless providers.include?(provider)
 
-  write_state(state, provider, providers)
-
-  actions = ["change-border-label(#{label(provider, ENV.fetch('FZF_QUERY', ''))})",
-             "change-header(#{header(provider, providers)})"]
-  actions +=
-    if (command = preview(provider))
-      ["change-preview(#{command})", 'change-preview-window(right,50%)']
-    else
-      ['change-preview-window(hidden)']
-    end
-  # The list is reloaded in place, so the pane fzf runs in stays open, and the
-  # cursor goes back to the top as the items are not the same
-  actions << "reload(#{SCRIPT.shellescape} list #{state.shellescape})" << 'first'
-  puts actions.join('+')
+  puts switch_actions(provider, state, providers)
+  exit
+when 'click'
+  # A word in the header was clicked on, and the words are the names of the
+  # providers and the keys that are listed after them
+  state = ARGV[1]
+  current, providers = read_state(state)
+  case ENV.fetch('FZF_CLICK_HEADER_WORD', '')
+  when *providers          then puts switch_actions(ENV['FZF_CLICK_HEADER_WORD'], state, providers)
+  when 'CTRL-T', 'next'    then puts switch_actions(next_provider(current, providers), state, providers)
+  when 'CTRL-R', 'reload'  then puts switch_actions(current, state, providers)
+  when 'CTRL-O', 'open'    then puts open_action(current, state)
+  end
   exit
 end
 
@@ -445,6 +467,8 @@ options += ['--bind', "ctrl-o:transform(#{SCRIPT.shellescape} open-action #{stat
 # CTRL-R lists again, from the directory in the query, or from the pane as it
 # is now
 options += ['--bind', "ctrl-r:transform(#{SCRIPT.shellescape} switch #{state.path.shellescape} same)"]
+# The header is a row of labels, so a click on one of them does what it says
+options += ['--bind', "click-header:transform(#{SCRIPT.shellescape} click #{state.path.shellescape})"]
 providers.each do |name|
   options += ['--bind',
               "alt-#{name[0]}:transform(#{SCRIPT.shellescape} switch #{state.path.shellescape} #{name})"]

@@ -49,7 +49,8 @@ Inside fzf, <kbd>CTRL-T</kbd> goes to the next provider, and these keys switch
 to one directly. <kbd>CTRL-O</kbd> opens what is under the cursor, a URL in the
 browser and anything else in `$EDITOR`, and comes back to the finder after.
 <kbd>CTRL-R</kbd> lists again, from the directory in the query, or from the pane
-as it is now.
+as it is now. The header is a row of labels, so clicking one of them does what it
+says.
 
 | Key | Provider | |
 | --- | -------- | - |
