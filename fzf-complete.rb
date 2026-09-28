@@ -88,18 +88,22 @@ def up_to_column(string, column)
   string.each_char.take_while { |char| (used += char_columns(char)) <= column }.join
 end
 
-# The indentation and the decorations a program draws in front of its text
-DECORATION = /\A(?:[⏺❯⎿│┃●○•▌↳⏵✻]+\s*|[*>+-]\s+)/
-BOX = /[─━│┃╭╮╰╯┌┐└┘├┤┼┬┴▌▐▏▕]/
+# What a program draws its interface with, and never a part of a word: bullets
+# and angle quotes, arrows, technical and geometric shapes, dingbats, braille,
+# the private use area where the glyphs of a patched font live, and emoji
+DECORATION = /[\u2022\u2039\u203A\u2190-\u21FF\u2300-\u23FF\u2500-\u25FF
+               \u2600-\u27BF\u2800-\u28FF\u{E000}-\u{F8FF}\u{1F300}-\u{1FAFF}]/x
+# The same, and the indentation, in front of the text of a row
+LEADING = /\A(?:#{DECORATION}+[[:space:]]*|[*>+-][[:space:]]+)/
 
 def undecorate(text)
   text = text.lstrip
-  text = text.sub(DECORATION, '').lstrip while text.match?(DECORATION)
+  text = text.sub(LEADING, '').lstrip while text.match?(LEADING)
   text
 end
 
 def clean(text)
-  text.gsub(BOX, ' ').squeeze(' ').strip
+  text.gsub(DECORATION, ' ').squeeze(' ').strip
 end
 
 # A program may pad its output with a character like the no-break space, which
@@ -436,8 +440,9 @@ cursor_y = display('#{cursor_y}').to_i
 row = normalize(tmux("capture-pane -p -N -t #{PANE} -S #{cursor_y} -E #{cursor_y}").chomp)
 before = up_to_column(row, cursor_x)
 # The row ends before the cursor when the cell in front of it is blank, and a
-# blank cell is not part of any word
-TOKEN = columns(before) < cursor_x ? '' : before[/[^[:space:]]*\z/].to_s
+# blank cell is not part of any word. What a program decorates its prompt with
+# is not part of one either, and is left where it is.
+TOKEN = columns(before) < cursor_x ? '' : before[/[^[:space:]]*\z/].to_s.sub(/\A#{DECORATION}+/, '')
 
 providers = active_providers
 state = Tempfile.new('fzf-complete')
