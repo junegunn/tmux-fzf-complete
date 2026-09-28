@@ -102,6 +102,16 @@ def undecorate(text)
   text
 end
 
+# A row that starts with a bullet starts an item, and never continues one
+def marker?(row)
+  row.lstrip.match?(LEADING)
+end
+
+# The column the text of a row begins at, past its indentation and bullet
+def text_column(row, text)
+  columns(row) - columns(text)
+end
+
 def clean(text)
   text.gsub(DECORATION, ' ').squeeze(' ').strip
 end
@@ -151,31 +161,78 @@ def screen
   @screen ||= rows_above.reverse + rows_below
 end
 
+# The punctuation a word can be written in the middle of is not part of it
+def trim(word)
+  word.gsub(/\A['"`(\[{<]+|['"`)\]},;:.]+\z/, '')
+end
+
 # Lazy, so that a check for the first item does not walk the whole screen
 def screen_words
-  screen.lazy.flat_map(&:split)
-        .map { |word| word.gsub(/\A['"`(\[{<]+|['"`)\]},;:.]+\z/, '') }
+  screen.lazy.flat_map(&:split).map { |word| trim(word) }
         .select { |word| word.match?(/[[:alnum:]]/) }
 end
 
-# The text of the pane as paragraphs. A row whose text reaches the right edge
-# was wrapped by the program, so it is joined with the row that follows.
+# A path too long for the row it is on is broken across two rows, so the end
+# of a row and the start of the next are offered as one word as well. Only
+# the ones that exist are kept, so a join that is not a path costs nothing.
+def broken_words(source)
+  source.each_cons(2).filter_map do |first, second|
+    tail = first.rstrip[/\S+\z/]
+    next unless tail&.include?('/')
+
+    head = undecorate(second)[/\A\S+/]
+    trim("#{tail}#{head}") if head
+  end
+end
+
+def screen_broken_words
+  @screen_broken_words ||= broken_words(rows_above).reverse + broken_words(rows_below)
+end
+
+# Whether the program ran out of room on the row and put the rest on the next
+# one: the row reaches the right edge, or the first word of the text that
+# follows would not have fit on it. A row wider than the pane is one the
+# terminal wrapped and -J joined back together, so it holds a whole line.
+def wrapped?(row, text, width)
+  return false if row.nil? || columns(row) > width
+  return true if columns(row) >= width - 8
+
+  # A word wider than the pane says nothing, as it has to be broken anywhere
+  word = columns(text[/\A\S+/])
+  word < width && columns(row) + word >= width
+end
+
+# A path too long for its row is broken after a slash, so the two parts are
+# put back together with nothing in between. A row that ends with a directory
+# name, as a listing does, is not a path cut in two.
+def append(text, more)
+  text.match?(%r{/[^/[:space:]]+/\z}) ? text + more : "#{text} #{more}"
+end
+
+# The text of the pane as paragraphs. A row the program wrapped is joined with
+# the row that follows it, and so are the rows of a list item, which the
+# program indents under the text of the item.
 def paragraphs(source)
   width = display('#{pane_width}').to_i
-  buffer = nil
+  buffer = indent = previous = nil
   source.each_with_object([]) do |raw, out|
     raw = raw.rstrip
     text = undecorate(raw)
     if text.empty?
       out << buffer if buffer
-      buffer = nil
+      buffer = indent = previous = nil
       next
     end
-    buffer = buffer ? "#{buffer} #{text}" : text
-    next if columns(raw) >= width - 8
-
-    out << buffer
-    buffer = nil
+    item = marker?(raw)
+    column = text_column(raw, text)
+    if buffer && !item && (wrapped?(previous, text, width) || column == indent)
+      buffer = append(buffer, text)
+    else
+      out << buffer if buffer
+      buffer = text
+      indent = item ? column : nil
+    end
+    previous = raw
   end.tap { |out| out << buffer if buffer }
 end
 
@@ -238,7 +295,8 @@ end
 # name from something shaped like it, such as 12/12 or v2.42.0. A line number
 # after it, as in the output of a compiler, is dropped.
 def path_candidates
-  screen_words.reject { |word| word.include?('://') }
+  screen_words.chain(screen_broken_words).lazy
+              .reject { |word| word.include?('://') }
               .map { |word| word.sub(/:\d+(?::\d+)?\z/, '') }
               .reject { |word| word.length < 2 || %w[.. ~/].include?(word) }
 end

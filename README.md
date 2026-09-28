@@ -61,9 +61,10 @@ says.
 | <kbd>ALT-S</kbd> | Sentences | on the screen |
 
 Paths are the words on the screen that exist as a path, with a line number
-after them dropped. Sentences are the text of the pane without its indentation,
-with the rows the program wrapped joined back together, which is what makes the
-output of an AI agent usable. A provider that finds nothing is not offered.
+after them dropped, and one that the program broke across two rows put back
+together. Sentences are the text of the pane without its indentation, with the
+rows the program wrapped joined back together, which is what makes the output
+of an AI agent usable. A provider that finds nothing is not offered.
 
 Paths are quoted when they are inserted, prose is not.
 
