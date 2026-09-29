@@ -381,7 +381,7 @@ end
 def header(current, providers)
   keys = ' · ALT+letter · CTRL-T next'
   keys += ' · CTRL-O open' if OPENABLE.include?(current)
-  keys += ' · CTRL-R reload'
+  keys += ' · CTRL-Y copy · CTRL-R reload'
   providers.map do |name|
     text = "\e[4m#{name[0]}\e[24m#{name[1..]}"
     "#{current == name ? "\e[1m" : "\e[2m"}#{text}\e[22m"
@@ -414,6 +414,32 @@ def open_action(current, state)
   return nil unless OPENABLE.include?(current)
 
   "execute(#{SCRIPT.shellescape} open #{state.shellescape} {})"
+end
+
+def copy_action(state)
+  "execute-silent(#{SCRIPT.shellescape} copy #{state.shellescape} {+})"
+end
+
+# A path is inserted as it can be typed on a command line. gsub is given a
+# block, as a backslash in a replacement string stands for a part of the item
+# instead of itself.
+def shell_quote(item)
+  return item if item.match?(%r{\A[A-Za-z0-9_@%+=:,./~-]+\z})
+
+  "'#{item.gsub("'") { "'\\''" }}'"
+end
+
+# What the items amount to as one line of text
+def text_of(items, provider)
+  quoted = QUOTED.include?(provider)
+  items.map { |item| quoted ? shell_quote(item) : item }.join(' ')
+end
+
+# Commands that take what goes in the clipboard from their input. tmux comes
+# last, as the terminal has to be willing to take what it sends.
+def clipboard(text)
+  command = executable('pbcopy', 'wl-copy', 'xclip -selection clipboard', 'xsel -ib')
+  IO.popen(command || 'tmux load-buffer -w -', 'w') { |io| io.write(text) }
 end
 
 # The provider in use, and the ones to offer
@@ -450,6 +476,15 @@ when 'open'
     system("#{ENV.fetch('EDITOR', 'vim')} #{expand_tilde(item).shellescape}")
   end
   exit
+when 'copy'
+  # CTRL-Y, with the items that are marked, or the one under the cursor when
+  # none are
+  current, = read_state(ARGV[1])
+  items = ARGV[2..]
+  exit if items.empty?
+
+  clipboard(text_of(items, current))
+  halt "Copied #{items.length == 1 ? items.first : "#{items.length} items"}"
 when 'list'
   current, = read_state(ARGV[1])
   print_items(current, ENV.fetch('FZF_QUERY', ''))
@@ -477,6 +512,7 @@ when 'click'
   when 'CTRL-T', 'next'    then puts switch_actions(next_provider(current, providers), state, providers)
   when 'CTRL-R', 'reload'  then puts switch_actions(current, state, providers)
   when 'CTRL-O', 'open'    then puts open_action(current, state)
+  when 'CTRL-Y', 'copy'    then puts copy_action(state)
   end
   exit
 end
@@ -527,6 +563,8 @@ options += if (command = preview(provider))
 options += ['--bind', "ctrl-t:transform(#{SCRIPT.shellescape} switch #{state.path.shellescape} next)"]
 # CTRL-O opens the item, and fzf comes back afterwards
 options += ['--bind', "ctrl-o:transform(#{SCRIPT.shellescape} open-action #{state.path.shellescape})"]
+# CTRL-Y copies the items, and says so in a tmux message
+options += ['--bind', "ctrl-y:#{copy_action(state.path)}"]
 # CTRL-R lists again, from the directory in the query, or from the pane as it
 # is now
 options += ['--bind', "ctrl-r:transform(#{SCRIPT.shellescape} switch #{state.path.shellescape} same)"]
@@ -538,20 +576,12 @@ providers.each do |name|
 end
 
 selected = with("fzf #{options.map(&:shellescape).join(' ')}") { print_items(provider, TOKEN) }
-quoted = QUOTED.include?(read_state(state.path).first)
+current, = read_state(state.path)
 state.unlink
 
 exit if selected.empty?
 
-# gsub is given a block, as a backslash in a replacement string stands for a
-# part of the item instead of itself
-def shell_quote(item)
-  return item if item.match?(%r{\A[A-Za-z0-9_@%+=:,./~-]+\z})
-
-  "'#{item.gsub("'") { "'\\''" }}'"
-end
-
-text = selected.map { |item| quoted ? shell_quote(item) : item }.join(' ')
+text = text_of(selected, current)
 
 # Replace the word in front of the cursor with the text
 if !TOKEN.empty? && text.start_with?(TOKEN)

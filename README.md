@@ -48,9 +48,10 @@ in front of the cursor becomes the query, and the selection replaces it.
 Inside fzf, <kbd>CTRL-T</kbd> goes to the next provider, and these keys switch
 to one directly. <kbd>CTRL-O</kbd> opens what is under the cursor, a URL in the
 browser and anything else in `$EDITOR`, and comes back to the finder after.
-<kbd>CTRL-R</kbd> lists again, from the directory in the query, or from the pane
-as it is now. The header is a row of labels, so clicking one of them does what it
-says.
+<kbd>CTRL-Y</kbd> copies what is selected, or what is under the cursor when
+nothing is, and says so in a tmux message. <kbd>CTRL-R</kbd> lists again, from
+the directory in the query, or from the pane as it is now. The header is a row of
+labels, so clicking one of them does what it says.
 
 | Key | Provider | |
 | --- | -------- | - |
@@ -66,7 +67,9 @@ together. Sentences are the text of the pane without its indentation, with the
 rows the program wrapped joined back together, which is what makes the output
 of an AI agent usable. A provider that finds nothing is not offered.
 
-Paths are quoted when they are inserted, prose is not.
+Paths are quoted when they are inserted or copied, prose is not. The clipboard
+is set with `pbcopy`, `wl-copy`, `xclip` or `xsel`, and with the paste buffer of
+tmux when none of them is installed.
 
 Options
 -------
