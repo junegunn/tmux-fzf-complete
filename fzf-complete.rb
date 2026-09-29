@@ -543,10 +543,12 @@ state.unlink
 
 exit if selected.empty?
 
+# gsub is given a block, as a backslash in a replacement string stands for a
+# part of the item instead of itself
 def shell_quote(item)
   return item if item.match?(%r{\A[A-Za-z0-9_@%+=:,./~-]+\z})
 
-  "'#{item.gsub("'", %q('\\''))}'"
+  "'#{item.gsub("'") { "'\\''" }}'"
 end
 
 text = selected.map { |item| quoted ? shell_quote(item) : item }.join(' ')
