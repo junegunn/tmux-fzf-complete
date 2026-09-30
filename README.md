@@ -95,9 +95,16 @@ bind-key u run-shell -b "TMUX_PANE=#{pane_id} \
   ~/github/tmux-fzf-complete/fzf-complete.rb urls"
 ```
 
-> [!NOTE]
+> [!TIP]
 > A program that draws a full screen, such as an AI agent, keeps no scrollback
-> in tmux, so only what is on the screen can be completed from.
+> in tmux, so only what is on the screen can be completed from. Claude Code and
+> Codex can draw on the main screen instead, which leaves their output in the
+> scrollback, as far back as `@fzf-complete-lines`.
+>
+> * Claude Code: `/tui default` in a session, or `"tui": "default"` in
+>   `~/.claude/settings.json`
+> * Codex: `alternate_screen = "never"` under `[tui]` in `~/.codex/config.toml`,
+>   or `codex --no-alt-screen`
 
 See also
 --------
