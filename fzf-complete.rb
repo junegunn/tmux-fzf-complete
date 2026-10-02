@@ -535,8 +535,9 @@ row = normalize(tmux("capture-pane -p -N -t #{PANE} -S #{cursor_y} -E #{cursor_y
 before = up_to_column(row, cursor_x)
 # The row ends before the cursor when the cell in front of it is blank, and a
 # blank cell is not part of any word. What a program decorates its prompt with
-# is not part of one either, and is left where it is.
-TOKEN = columns(before) < cursor_x ? '' : before[/[^[:space:]]*\z/].to_s.sub(/\A#{DECORATION}+/, '')
+# is not part of one either, and is left where it is. So is the @ that a
+# program like Claude Code puts in front of a path to mention a file.
+TOKEN = columns(before) < cursor_x ? '' : before[/[^[:space:]]*\z/].to_s.sub(/\A#{DECORATION}+/, '').delete_prefix('@')
 
 providers = active_providers
 state = Tempfile.new('fzf-complete')
