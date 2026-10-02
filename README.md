@@ -61,15 +61,7 @@ labels, so clicking one of them does what it says.
 | <kbd>ALT-P</kbd> | Paths | on the screen |
 | <kbd>ALT-S</kbd> | Sentences | on the screen |
 
-Paths are the words on the screen that exist as a path, with a line number
-after them dropped, and one that the program broke across two rows put back
-together. Sentences are the text of the pane without its indentation, with the
-rows the program wrapped joined back together, which is what makes the output
-of an AI agent usable. A provider that finds nothing is not offered.
-
-Paths are quoted when they are inserted or copied, prose is not. The clipboard
-is set with `pbcopy`, `wl-copy`, `xclip` or `xsel`, and with the paste buffer of
-tmux when none of them is installed.
+A provider that finds nothing is not offered.
 
 Options
 -------
