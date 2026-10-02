@@ -12,6 +12,7 @@
 # in use is kept in, as a key binding cannot carry it.
 
 require 'English'
+require 'set'
 require 'shellwords'
 require 'tempfile'
 
@@ -157,8 +158,12 @@ end
 # The row the cursor is on and the rows below it come last. A program with an
 # input box at the bottom draws its chrome there, while the output worth
 # completing from is right above the cursor.
+def screen_indices
+  @screen_indices ||= (0...cursor_row).to_a.reverse + ((cursor_row + 1)...rows.size).to_a
+end
+
 def screen
-  @screen ||= rows_above.reverse + rows_below
+  @screen ||= screen_indices.map { |index| rows[index] }
 end
 
 # The punctuation a word can be written in the middle of is not part of it,
@@ -168,10 +173,49 @@ def trim(word)
   word.gsub(/\A['"`(\[{<]+|['"`)\]},;:.]+\z/, '').sub(/\A[[:alpha:]]+\((?![^(]*\))/, '')
 end
 
+# The parts of the names in a directory that a space follows
+def spaced_prefixes(dir)
+  (@spaced_prefixes ||= {})[dir] ||=
+    begin
+      Dir.children(dir).each_with_object(Set.new) do |name, set|
+        parts = name.split(/ /, -1)
+        (1...parts.size).each { |count| set << parts.take(count).join(' ') }
+      end
+    rescue SystemCallError
+      Set.new
+    end
+end
+
+def continues?(path)
+  (@continues ||= {}).fetch(path) do
+    @continues[path] =
+      !path.empty? && !path.end_with?('/') &&
+      expand_tilde(path).then { |full| spaced_prefixes(File.dirname(full)).include?(File.basename(full)) }
+  end
+end
+
+# A name with a space in it is split into words, so a word is joined with the
+# words after it for as long as a name in its directory goes on with them. The
+# program may have broken the path at a space, so the words can be on the next
+# two rows.
+def spaced_paths(index)
+  words = rows[index].split
+  following = rows[(index + 1)..(index + 2)].to_a.flat_map { |row| undecorate(row).split }
+  words.each_index.flat_map do |start|
+    path = trim(words[start])
+    (words[(start + 1)..] + following).each_with_object([]) do |word, found|
+      break found unless continues?(path)
+
+      path = trim("#{path} #{word}")
+      found << path
+    end
+  end
+end
+
 # Lazy, so that a check for the first item does not walk the whole screen
 def screen_words
-  screen.lazy.flat_map(&:split).map { |word| trim(word) }
-        .select { |word| word.match?(/[[:alnum:]]/) }
+  screen_indices.lazy.flat_map { |index| spaced_paths(index) + rows[index].split }
+                .map { |word| trim(word) }.select { |word| word.match?(/[[:alnum:]]/) }
 end
 
 # A path too long for the row it is on is broken across two rows, so the end
