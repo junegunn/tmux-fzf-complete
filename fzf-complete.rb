@@ -161,9 +161,11 @@ def screen
   @screen ||= rows_above.reverse + rows_below
 end
 
-# The punctuation a word can be written in the middle of is not part of it
+# The punctuation a word can be written in the middle of is not part of it,
+# and neither is a name in front of a parenthesis that the word does not close,
+# as in Read(README.md)
 def trim(word)
-  word.gsub(/\A['"`(\[{<]+|['"`)\]},;:.]+\z/, '')
+  word.gsub(/\A['"`(\[{<]+|['"`)\]},;:.]+\z/, '').sub(/\A[[:alpha:]]+\((?![^(]*\))/, '')
 end
 
 # Lazy, so that a check for the first item does not walk the whole screen
