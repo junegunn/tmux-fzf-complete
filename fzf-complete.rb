@@ -592,6 +592,9 @@ write_state(state.path, provider, providers)
 
 options = ['--tmux', option('@fzf-complete-popup', '90%,70%'),
            '--multi', '--layout', 'reverse', '--min-height', '10+',
+           # Items are ordered by how close to the cursor they were found, and
+           # this scheme keeps that order instead of sorting by length
+           '--scheme', 'history',
            '--no-separator', '--header-border', 'horizontal',
            '--border-label-pos', '2', '--color', 'label:blue',
            '--highlight-line', '--preview-border', 'line', '--wrap',
