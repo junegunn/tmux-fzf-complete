@@ -43,24 +43,6 @@ def executable(*commands)
   commands.find { |c| `command -v #{c.split.first.shellescape}`.empty?.! }
 end
 
-# Pipe into a command, and take its output. Straight from tmux-fzf-url.
-def with(command)
-  io = IO.popen(command, 'r+')
-  begin
-    stdout = $stdout
-    $stdout = io
-    begin
-      yield
-    rescue Errno::EPIPE
-      nil
-    end
-  ensure
-    $stdout = stdout
-  end
-  io.close_write
-  io.readlines.map(&:chomp)
-end
-
 # Columns a character occupies. tmux counts columns, so the characters in
 # front of the cursor cannot simply be counted.
 WIDE = [
@@ -625,7 +607,13 @@ providers.each do |name|
               "alt-#{name[0]}:transform(#{SCRIPT.shellescape} switch #{state.path.shellescape} #{name})"]
 end
 
-selected = with("fzf #{options.map(&:shellescape).join(' ')}") { print_items(provider, TOKEN) }
+# The list is loaded by fzf itself, so that it stops the moment fzf exits.
+# Piping it in would make this script relay the rest of a long listing before
+# it could insert anything, and reading the input of a run-shell command never
+# reaches the end, so fzf is given nothing to read.
+options += ['--bind', "start:reload(#{SCRIPT.shellescape} list #{state.path.shellescape})"]
+command = "fzf #{options.map(&:shellescape).join(' ')} < /dev/null"
+selected = IO.popen(command, 'r') { |io| io.readlines.map(&:chomp) }
 current, = read_state(state.path)
 state.unlink
 
