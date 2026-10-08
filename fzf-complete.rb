@@ -92,8 +92,8 @@ end
 # What a program draws its interface with, and never a part of a word: bullets
 # and angle quotes, arrows, technical and geometric shapes, dingbats, braille,
 # the private use area where the glyphs of a patched font live, and emoji
-DECORATION = /[\u2022\u2039\u203A\u2190-\u21FF\u2300-\u23FF\u2500-\u25FF
-               \u2600-\u27BF\u2800-\u28FF\u{E000}-\u{F8FF}\u{1F300}-\u{1FAFF}]/x
+# /x would not leave a space out of a character class, so this stays on one line
+DECORATION = /[\u2022\u2039\u203A\u2190-\u21FF\u2300-\u23FF\u2500-\u25FF\u2600-\u27BF\u2800-\u28FF\u{E000}-\u{F8FF}\u{1F300}-\u{1FAFF}]/
 # The same, and the indentation, in front of the text of a row
 LEADING = /\A(?:#{DECORATION}+[[:space:]]*|[*>+-][[:space:]]+)/
 
