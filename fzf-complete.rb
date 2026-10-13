@@ -343,11 +343,14 @@ def sentence?(line)
   text.match?(/[[:alpha:]]/) && text.include?(' ')
 end
 
+# A paragraph of one word is not text, but a sentence of one word in a longer
+# paragraph is, as in "Done."
 def sentences
   (paragraphs(rows_above).reverse + paragraphs(rows_below))
     .map { |para| clean(para) }
+    .select { |para| para.match?(/[[:alpha:]]/) && para.include?(' ') }
     .flat_map { |para| para.split(/(?<=[.!?])\s+(?=["'(\[]?[A-Z])/) }
-    .select { |line| line.match?(/[[:alpha:]]/) && line.include?(' ') }
+    .select { |line| line.match?(/[[:alpha:]]/) }
     .uniq
 end
 
