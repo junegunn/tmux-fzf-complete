@@ -85,9 +85,12 @@ def undecorate(text)
   text
 end
 
+# The vertical bar a program draws in front of every row of a quote
+QUOTE = /\A[[:space:]]*(?:[>\u2502\u2503\u2506\u2507\u250A\u250B\u254E\u254F\u2551\u2589-\u258F][[:space:]]*)+/
+
 # A row that starts with a bullet starts an item, and never continues one
 def marker?(row)
-  row.lstrip.match?(LEADING)
+  row.sub(QUOTE, '').lstrip.match?(LEADING)
 end
 
 # The column the text of a row begins at, past its indentation and bullet
@@ -242,7 +245,7 @@ end
 # program indents under the text of the item.
 def paragraphs(source)
   width = display('#{pane_width}').to_i
-  buffer = indent = previous = nil
+  buffer = indent = previous = quoted = nil
   source.each_with_object([]) do |raw, out|
     raw = raw.rstrip
     text = undecorate(raw)
@@ -253,7 +256,8 @@ def paragraphs(source)
     end
     item = marker?(raw)
     column = text_column(raw, text)
-    if buffer && !item && (wrapped?(previous, text, width) || column == indent)
+    quote = raw.match?(QUOTE)
+    if buffer && !item && quote == quoted && (wrapped?(previous, text, width) || column == indent)
       buffer = append(buffer, text)
     else
       out << buffer if buffer
@@ -261,6 +265,7 @@ def paragraphs(source)
       indent = item ? column : nil
     end
     previous = raw
+    quoted = quote
   end.tap { |out| out << buffer if buffer }
 end
 
