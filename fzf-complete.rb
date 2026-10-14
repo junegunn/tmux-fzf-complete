@@ -587,7 +587,7 @@ options = ['--tmux', option('@fzf-complete-popup', '90%,70%'),
            '--scheme', 'history',
            '--no-separator', '--header-border', 'horizontal',
            '--border-label-pos', '2', '--color', 'label:blue',
-           '--highlight-line', '--preview-border', 'line', '--wrap',
+           '--highlight-line', '--preview-border', 'line', '--wrap=word',
            # The preview and the child commands below are bash
            '--with-shell', 'bash -c',
            '--bind', 'ctrl-/:change-preview-window(down,50%|hidden|)',
