@@ -118,10 +118,12 @@ halt 'TMUX_PANE is not set' if PANE.nil? || PANE.empty?
 
 # --- What the pane holds --------------------------------------------------
 
+def capture(flags)
+  tmux("capture-pane -p #{flags} -J -N -S -#{option('@fzf-complete-lines', '10000')} -t #{PANE}").lines
+end
+
 def rows
-  @rows ||=
-    tmux("capture-pane -p -J -N -S -#{option('@fzf-complete-lines', '10000')} -t #{PANE}")
-    .lines.map { |line| normalize(line.chomp) }
+  @rows ||= capture('').map { |line| normalize(line.chomp) }
 end
 
 # Index of the row the cursor is on. cursor_y counts from the top of the
@@ -313,9 +315,26 @@ def print_paths(query, dirs)
 end
 
 URL = %r{(?:https?|ftp|file|ssh|git)://[^\s<>|"'`]+}
+# The start of a hyperlink, and the URL it points to
+LINK = %r{\e\]8;[^;\e\a]*;([^\e\a]*://[^\e\a]*)(?:\e\\|\a)}
 
+# The URLs of the hyperlinks on each row. A link holds the whole URL, even when
+# the program broke its text across rows.
+def link_rows
+  @link_rows ||= capture('-e').map { |line| line.scan(LINK).flatten }
+end
+
+def screen_links
+  screen_indices.lazy.flat_map { |index| link_rows[index] || [] }
+end
+
+# The text of a link broken across rows is the start of its URL, and is left out
 def urls
-  screen.flat_map { |line| line.scan(URL).map { |url| url.sub(/[)'"`\]},;:.!?]+\z/, '') } }.uniq
+  screen_indices.flat_map do |index|
+    links = link_rows[index] || []
+    shown = rows[index].scan(URL).map { |url| url.sub(/[)'"`\]},;:.!?]+\z/, '') }
+    links + shown.reject { |url| links.any? { |link| link.start_with?(url) } }
+  end.uniq
 end
 
 def expand_tilde(path)
@@ -401,7 +420,7 @@ end
 # of building a list that may be thrown away.
 def available?(provider)
   case provider
-  when 'urls'      then screen.any? { |line| line.match?(URL) }
+  when 'urls'      then screen.any? { |line| line.match?(URL) } || screen_links.any?
   when 'paths'     then path_candidates.any? { |word| File.exist?(expand_tilde(word)) }
   when 'sentences' then screen.any? { |line| sentence?(line) }
   else true
