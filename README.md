@@ -93,8 +93,8 @@ bind-key u run-shell -b "TMUX_PANE=#{pane_id} \
 ```
 
 With `--open` after the provider, <kbd>Enter</kbd> opens what is selected
-instead of inserting it, and the query starts empty. This is what
-`@fzf-complete-url-bind` binds, for URLs.
+instead of inserting it, the query starts empty, and no other provider is
+offered. This is what `@fzf-complete-url-bind` binds, for URLs.
 
 > [!TIP]
 > A program that draws a full screen, such as an AI agent, keeps no scrollback

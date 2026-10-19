@@ -637,12 +637,14 @@ end
 
 # The providers, with the letter that switches to each of them underlined. The
 # one in use is bold, the rest are dimmed.
+# A single provider is offered with --open, and nothing switches it.
 def header(current, providers)
-  keys = ' · ALT+letter · CTRL-T next'
+  switch = providers.size > 1
+  keys = switch ? ' · ALT+letter · CTRL-T next' : ''
   keys += ' · CTRL-O open' if OPENABLE.include?(current)
   keys += ' · CTRL-Y copy · CTRL-R reload'
   providers.map do |name|
-    text = "\e[4m#{name[0]}\e[24m#{name[1..]}"
+    text = switch ? "\e[4m#{name[0]}\e[24m#{name[1..]}" : name
     "#{current == name ? "\e[1m" : "\e[2m"}#{text}\e[22m"
   # The keys come last, as the header is truncated when a preview is shown
   end.join(' ') + "\e[2m#{keys}\e[22m"
@@ -835,7 +837,14 @@ row = normalize(tmux("capture-pane -p -N -t #{PANE} -S #{cursor_y} -E #{cursor_y
 # Nothing is replaced when the selection is opened
 TOKEN = OPEN ? '' : word_before(row, display('#{cursor_x}').to_i)
 
-providers = active_providers
+# --open offers only the provider it is given, so that Enter always does what
+# the key it is bound to is for
+if OPEN
+  halt "No #{provider} on the screen" unless available?(provider)
+  providers = [provider]
+else
+  providers = active_providers
+end
 state = Tempfile.new('fzf-complete')
 state.close
 write_state(state.path, provider, providers)
@@ -858,7 +867,7 @@ options = ['--tmux', option('@fzf-complete-popup', '90%,70%'),
            '--preview', preview(provider, state.path),
            '--preview-window', preview_window(provider)]
 # CTRL-T goes to the next provider, so that it can be pressed repeatedly
-options += ['--bind', "ctrl-t:transform(#{SCRIPT.shellescape} switch #{state.path.shellescape} next)"]
+options += ['--bind', "ctrl-t:transform(#{SCRIPT.shellescape} switch #{state.path.shellescape} next)"] unless OPEN
 # CTRL-O opens the item, and fzf comes back afterwards
 options += ['--bind', "ctrl-o:transform(#{SCRIPT.shellescape} open-action #{state.path.shellescape})"]
 options += ['--bind', "enter:transform(#{SCRIPT.shellescape} enter #{state.path.shellescape})"] if OPEN
@@ -869,7 +878,7 @@ options += ['--bind', "ctrl-y:#{copy_action(state.path)}"]
 options += ['--bind', "ctrl-r:transform(#{SCRIPT.shellescape} switch #{state.path.shellescape} same)"]
 # The header is a row of labels, so a click on one of them does what it says
 options += ['--bind', "click-header:transform(#{SCRIPT.shellescape} click #{state.path.shellescape})"]
-providers.each do |name|
+(OPEN ? [] : providers).each do |name|
   options += ['--bind',
               "alt-#{name[0]}:transform(#{SCRIPT.shellescape} switch #{state.path.shellescape} #{name})"]
 end
