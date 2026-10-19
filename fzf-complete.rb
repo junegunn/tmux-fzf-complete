@@ -328,11 +328,37 @@ def screen_links
   screen_indices.lazy.flat_map { |index| link_rows[index] || [] }
 end
 
+# What can only be a part of a URL, and not a word of the text
+URL_PART = %r{\A[^\s<>|"'`]*[/.#?=&%][^\s<>|"'`]*\z}
+
+# The start of the next row, when it is the rest of a URL the program broke at
+# the end of the row
+def url_rest(index, width)
+  text = undecorate(rows[index + 1].to_s)
+  head = text[/\A\S+/]
+  head if head&.match?(URL_PART) && wrapped?(rows[index].rstrip, text, width)
+end
+
+# A URL at the end of a row is joined with the rest of it on the rows below
+def text_urls(index, width)
+  urls = rows[index].scan(URL)
+  return urls unless urls.any? && rows[index].rstrip.end_with?(urls.last)
+
+  while (rest = url_rest(index, width))
+    urls[-1] += rest
+    index += 1
+    # The row goes on with the text after the URL
+    break unless undecorate(rows[index]).rstrip == rest
+  end
+  urls
+end
+
 # The text of a link broken across rows is the start of its URL, and is left out
 def urls
+  width = display('#{pane_width}').to_i
   screen_indices.flat_map do |index|
     links = link_rows[index] || []
-    shown = rows[index].scan(URL).map { |url| url.sub(/[)'"`\]},;:.!?]+\z/, '') }
+    shown = text_urls(index, width).map { |url| url.sub(/[)'"`\]},;:.!?]+\z/, '') }
     links + shown.reject { |url| links.any? { |link| link.start_with?(url) } }
   end.uniq
 end
