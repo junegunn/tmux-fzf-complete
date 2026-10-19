@@ -114,7 +114,6 @@ end
 SCRIPT = File.realpath(__FILE__)
 
 PANE = ENV.fetch('TMUX_PANE', nil)
-halt 'TMUX_PANE is not set' if PANE.nil? || PANE.empty?
 
 # --- What the pane holds --------------------------------------------------
 
@@ -533,6 +532,23 @@ def write_state(path, current, providers)
   File.write(path, "#{current}\n#{providers.join(' ')}\n")
 end
 
+# The word in front of the cursor, which the selection replaces. The row ends
+# before the cursor when the cell in front of it is blank, and a blank cell is
+# not part of any word. What a program decorates its prompt with is not part of
+# one either, and is left where it is. So is the @ that a program like Claude
+# Code puts in front of a path to mention a file.
+def word_before(row, cursor_x)
+  before = up_to_column(row, cursor_x)
+  return '' if columns(before) < cursor_x
+
+  before[/[^[:space:]]*\z/].to_s.sub(/\A#{DECORATION}+/, '').delete_prefix('@')
+end
+
+# The functions above are what the tests load
+return unless __FILE__ == $PROGRAM_NAME
+
+halt 'TMUX_PANE is not set' if PANE.nil? || PANE.empty?
+
 # --- Run as a child of fzf -----------------------------------------------
 
 case ARGV.first
@@ -607,18 +623,12 @@ halt "Unknown provider: #{provider}" unless PROVIDERS.include?(provider)
 pane_path = display('#{pane_current_path}')
 Dir.chdir(pane_path) if File.directory?(pane_path)
 
-# The word in front of the cursor, which the selection replaces. Taken from
-# the screen, as the pane may be running any program. -N keeps the trailing
-# spaces, without which the cursor column would point past the end of the row.
-cursor_x = display('#{cursor_x}').to_i
+# Taken from the screen, as the pane may be running any program. -N keeps the
+# trailing spaces, without which the cursor column would point past the end of
+# the row.
 cursor_y = display('#{cursor_y}').to_i
 row = normalize(tmux("capture-pane -p -N -t #{PANE} -S #{cursor_y} -E #{cursor_y}").chomp)
-before = up_to_column(row, cursor_x)
-# The row ends before the cursor when the cell in front of it is blank, and a
-# blank cell is not part of any word. What a program decorates its prompt with
-# is not part of one either, and is left where it is. So is the @ that a
-# program like Claude Code puts in front of a path to mention a file.
-TOKEN = columns(before) < cursor_x ? '' : before[/[^[:space:]]*\z/].to_s.sub(/\A#{DECORATION}+/, '').delete_prefix('@')
+TOKEN = word_before(row, display('#{cursor_x}').to_i)
 
 providers = active_providers
 state = Tempfile.new('fzf-complete')
