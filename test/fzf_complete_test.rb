@@ -11,8 +11,7 @@ require_relative '../fzf-complete'
 class FzfCompleteTest < Minitest::Test
   BASE = 'https://git.example.com/org/charts/blob/8f44f20964d7ec7e8b0603bc184b770afa358880/custom'
 
-  # A pane that shows the text, with the cursor on an empty row below it. \e]8
-  # starts a hyperlink, which only a capture with -e keeps.
+  # A pane that shows the text, with the cursor on an empty row below it
   def show(text, width: 80)
     @text = text
     @width = width
@@ -21,8 +20,7 @@ class FzfCompleteTest < Minitest::Test
   def tmux(command)
     rows = @text.lines.size
     case command
-    when /capture-pane.* -e / then "#{@text}\n"
-    when /capture-pane/       then "#{@text.gsub(/\e\]8;[^\e\a]*(?:\e\\|\a)/, '')}\n"
+    when /capture-pane/       then "#{@text}\n"
     when /pane_width/         then "#{@width}\n"
     when /pane_height/        then "#{rows + 1}\n"
     when /cursor_y/           then "#{rows}\n"
@@ -78,6 +76,11 @@ class FzfCompleteTest < Minitest::Test
     assert_equal %w[https://example.com/edge2 https://example.com/edge/path https://example.com/short], urls
   end
 
+  def test_urls_in_colors
+    show("\e[32mhttps://a.com/x\e[0m and \e[1mhttps://a.com/y\e[0m\n")
+    assert_equal %w[https://a.com/x https://a.com/y], urls
+  end
+
   def test_urls_end_at_backslash
     show(<<~'TEXT')
       "body": "https://issues.apache.org/jira/browse/HBASE-30473\n\nBackport from",
@@ -127,6 +130,62 @@ class FzfCompleteTest < Minitest::Test
                   'The quick brown fox jumps over the lazy dog.',
                   'It was a sunny day in the park and everyone was happy.',
                   'Nobody expected what came next!'], sentences
+  end
+
+  # Without the empty rows at the bottom
+  def test_context_keeps_colors
+    rows = ["\e[32mgreen\e[0m see https://a.com/x here", 'next', '', '  ']
+    assert_equal ["\e[32mgreen\e[0m see \e[7mhttps://a.com/x\e[27m here\e[0m", "next\e[0m"],
+                 context(rows, 2, 'https://a.com/x', 20, 80)
+  end
+
+  def test_context_of_item_broken_across_rows
+    rows = ['(https://example.com/aaa/', '    bbb.html), more']
+    assert_equal ["(\e[7mhttps://example.com/aaa/\e[0m", "    \e[7mbbb.html\e[27m), more\e[0m"],
+                 context(rows, 2, 'https://example.com/aaa/bbb.html', 20, 80)
+
+    rows = ['  > A quote that', '  > wraps across rows. Next one.']
+    assert_equal ["  > \e[7mA quote that\e[0m", "  > \e[7mwraps across rows.\e[27m Next one.\e[0m"],
+                 context(rows, 2, 'A quote that wraps across rows.', 20, 80)
+  end
+
+  def test_context_of_link
+    rows = ["See #{link('https://x.com/1', 'PR #1')} now"]
+    assert_equal ["See \e]8;;https://x.com/1\e\\\e[7mPR #1\e]8;;\e\\\e[7m\e[27m now\e[0m"],
+                 context(rows, 1, 'https://x.com/1', 20, 80)
+  end
+
+  def test_context_around_nearest_occurrence
+    rows = (0..20).map { |i| "row #{i}#{' https://a.com/1' if [3, 15].include?(i)}#{' https://a.com/10' if i == 16}" }
+    assert_equal ['row 13', 'row 14', "row 15 \e[7mhttps://a.com/1", 'row 16 https://a.com/10', 'row 17'],
+                 context(rows, 18, 'https://a.com/1', 5, 80).map { |line| line.delete_suffix("\e[0m") }
+  end
+
+  def test_context_wraps_at_width
+    rows = ["\e[1m#{'x' * 30} https://a.com/long #{'y' * 10}"]
+    assert_equal ["\e[1m#{'x' * 20}", "#{'x' * 10} \e[7mhttps://a", ".com/long\e[27m #{'y' * 10}\e[0m"],
+                 context(rows, 1, 'https://a.com/long', 10, 20)
+  end
+
+  def test_context_of_row_longer_than_preview
+    rows = ["#{'x' * 200} https://a.com/end"]
+    assert_equal ['x' * 40, 'x' * 40, " \e[7mhttps://a.com/end\e[0m"],
+                 context(rows, 1, 'https://a.com/end', 5, 40)
+  end
+
+  def test_context_of_item_not_on_screen
+    assert_empty context(['nothing'], 1, 'missing', 20, 80)
+  end
+
+  def test_hidden_preview_stays_hidden
+    Tempfile.create('state') do |file|
+      write_state(file.path, 'files', %w[files urls], true)
+      assert_includes switch_actions('urls', file.path, %w[files urls]), 'change-preview-window(down,40%,hidden)'
+      assert_equal ['urls', %w[files urls], true], read_state(file.path)
+
+      write_state(file.path, 'urls', %w[files urls])
+      assert_includes switch_actions('files', file.path, %w[files urls]), 'change-preview-window(right,50%)+'
+    end
   end
 
   def test_word_before_cursor

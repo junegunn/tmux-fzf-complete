@@ -121,16 +121,25 @@ def capture(flags)
   tmux("capture-pane -p #{flags} -J -N -S -#{option('@fzf-complete-lines', '10000')} -t #{PANE}").lines
 end
 
+# The rows with the escape sequences of their colors and hyperlinks, which the
+# preview shows. The text of the rows comes from the same capture, so that the
+# two cannot differ.
+def escaped_rows
+  @escaped_rows ||= capture('-e').map(&:chomp)
+end
+
 def rows
-  @rows ||= capture('').map { |line| normalize(line.chomp) }
+  @rows ||= escaped_rows.map { |row| normalize(row.gsub(ESCAPE, '')) }
 end
 
 # Index of the row the cursor is on. cursor_y counts from the top of the
 # screen, while the rows start with the history.
 def cursor_row
-  height = display('#{pane_height}').to_i
-  cursor_y = display('#{cursor_y}').to_i
-  [[rows.size - height + cursor_y, 0].max, rows.size].min
+  @cursor_row ||= begin
+    height = display('#{pane_height}').to_i
+    cursor_y = display('#{cursor_y}').to_i
+    [[rows.size - height + cursor_y, 0].max, rows.size].min
+  end
 end
 
 def rows_above
@@ -321,7 +330,7 @@ LINK = %r{\e\]8;[^;\e\a]*;([^\e\a]*://[^\e\a]*)(?:\e\\|\a)}
 # The URLs of the hyperlinks on each row. A link holds the whole URL, even when
 # the program broke its text across rows.
 def link_rows
-  @link_rows ||= capture('-e').map { |line| line.scan(LINK).flatten }
+  @link_rows ||= escaped_rows.map { |line| line.scan(LINK).flatten }
 end
 
 def screen_links
@@ -409,6 +418,162 @@ def print_items(provider, query)
   end
 end
 
+# --- Where an item is on the screen --------------------------------------
+
+# Providers whose preview shows the rows around the item
+CONTEXT = %w[urls sentences].freeze
+
+# An escape sequence of a color or a hyperlink
+ESCAPE = %r{\e\][^\e\a]*(?:\e\\|\a)|\e\[[0-9;:?<=>]*[ -/]*[@-~]|\e.}m
+OSC8 = /\A\e\]8;[^;\e\a]*;([^\e\a]*)/
+
+# The rows of the screen are saved for the preview, which shows them as they
+# were when the list was made. Renamed into place, so that the preview never
+# reads a half-written file. Only the user can read it, as it holds what the
+# terminal showed.
+def screen_file(state)
+  "#{state}.screen"
+end
+
+def save_screen(state)
+  File.open("#{screen_file(state)}.tmp", 'w', 0o600) { |file| file.write(([cursor_row] + escaped_rows).join("\n")) }
+  File.rename("#{screen_file(state)}.tmp", screen_file(state))
+end
+
+# A row as its pieces, each an escape sequence or a character with its index in
+# the text of the row, and the ranges of the text each link covers
+def parse(row)
+  pieces = []
+  links = []
+  length = 0
+  row.scan(/(#{ESCAPE})|(.)/m) do |escape, char|
+    if char
+      pieces << [char, length]
+      length += 1
+      next
+    end
+
+    pieces << [escape, nil]
+    next unless (url = escape[OSC8, 1])
+
+    links.last[2] = length if links.last && links.last[2].nil?
+    links << [url, length, nil] unless url.empty?
+  end
+  links.last[2] = length if links.last && links.last[2].nil?
+  [pieces, links]
+end
+
+# The item as it can be broken across rows. A space stands for any blank,
+# decoration, or quote marker in between, and a row can end after any
+# character, with the next one going on after its indentation.
+def item_pattern(item)
+  blank = /(?:[[:space:]]|#{DECORATION}|>)+/
+  broken = /(?:[^\S\n]*\n(?:[^\S\n]|#{DECORATION}|>)*)?/
+  words = item.split.map { |word| word.chars.map { |char| Regexp.escape(char) }.join(broken.to_s) }
+  # Not a part of a longer word, as page/5 is of page/59
+  before = item.match?(/\A[[:alnum:]]/) ? '(?<![[:alnum:]])' : ''
+  after = item.match?(/[[:alnum:]]\z/) ? '(?![[:alnum:]])' : ''
+  Regexp.new(before + words.join(blank.to_s) + after)
+end
+
+# The rows of the item and the ranges of it on each, at the occurrence nearest
+# to the cursor. A link is found by its URL when its text is something else.
+def find_item(rows, texts, cursor, item)
+  nearest = ->(row) { row < cursor ? [0, cursor - row] : [1, row] }
+  starts = texts.each_with_object([0]) { |text, out| out << (out.last + text.length + 1) }
+  row_of = ->(offset) { starts.bsearch_index { |start| start > offset } - 1 }
+  matches = texts.join("\n").to_enum(:scan, item_pattern(item)).map { Regexp.last_match.offset(0) }
+  unless matches.empty?
+    first, last = matches.min_by { |from, _| nearest.(row_of.(from)) }
+    return (row_of.(first)..row_of.(last - 1)).to_h do |row|
+      # The indentation a row goes on after is not a part of the item
+      from = [first - starts[row], texts[row][/\A(?:[[:space:]]|#{DECORATION}|>)*/].length].max
+      [row, [[from, [last - starts[row], texts[row].length].min]]]
+    end
+  end
+
+  linked = rows.each_index.select { |row| rows[row].include?(item) && parse(rows[row])[1].any? { |url,| url == item } }
+  return {} if linked.empty?
+
+  # The rows next to the nearest one that the link goes on to
+  group = [linked.min_by(&nearest)]
+  group.unshift(group.first - 1) while linked.include?(group.first - 1)
+  group.push(group.last + 1) while linked.include?(group.last + 1)
+  group.to_h { |row| [row, parse(rows[row])[1].select { |url,| url == item }.map { |_, from, to| [from, to] }] }
+end
+
+# A row as the lines of the preview, broken at its width, with the ranges in
+# reverse video, and the line the first of them starts on. Spaces at the end
+# are dropped. The colors go on to the next line, so they are reset only at the
+# end of the row.
+def render(row, ranges, width)
+  pieces, = parse(row)
+  last = pieces.rindex { |piece, index| index && piece.match?(/\S/) } || -1
+  lines = [+'']
+  start = nil
+  column = 0
+  inside = false
+  pieces.each_with_index do |(piece, index), position|
+    if index.nil?
+      lines.last << piece
+      lines.last << "\e[7m" if inside
+      next
+    end
+    next if position > last
+
+    now = ranges.any? { |from, to| index >= from && index < to }
+    lines.last << (now ? "\e[7m" : "\e[27m") if now != inside
+    inside = now
+    used = char_columns(piece)
+    if column + used > width && column.positive?
+      lines << +''
+      column = 0
+    end
+    start ||= lines.size - 1 if now
+    lines.last << piece
+    column += used
+  end
+  lines.last << "\e[0m"
+  [lines, start]
+end
+
+# The rows around the item, as many as fit in the preview, with the item in
+# the middle
+def context(rows, cursor, item, height, width)
+  return [] if item.strip.empty?
+
+  texts = rows.map { |row| normalize(row.gsub(ESCAPE, '')) }
+  # The empty rows at the bottom of the screen
+  rows = rows.take((texts.rindex { |text| text.match?(/\S/) } || -1) + 1)
+  found = find_item(rows, texts, cursor, item)
+  return [] if found.empty?
+
+  lines = ->(row) { render(rows[row], found.fetch(row, []), width)[0] }
+  top, bottom = found.keys.minmax
+  shown = (top..bottom).flat_map(&lines)
+  # A row too long for the preview is shown from around the line the item is on
+  if shown.size > height
+    _, start = render(rows[top], found[top], width)
+    return shown.drop([start.to_i - (height / 2), 0].max)
+  end
+
+  loop do
+    added = false
+    if top.positive? && (more = lines.(top - 1)).size + shown.size <= height
+      top -= 1
+      shown = more + shown
+      added = true
+    end
+    if bottom < rows.size - 1 && (more = lines.(bottom + 1)).size + shown.size <= height
+      bottom += 1
+      shown += more
+      added = true
+    end
+    break unless added
+  end
+  shown
+end
+
 # --- How the finder looks -------------------------------------------------
 
 def viewer
@@ -434,12 +599,19 @@ end
 # it puts in place of {}, so the preview command has to expand it itself
 TILDE = 'f={}; f=${f/#\~/$HOME};'
 
-def preview(provider)
+def preview(provider, state)
   case provider
   when 'files' then %(#{TILDE} [ -f "$f" ] && #{viewer} "$f" || ls -F "$f")
   when 'dirs'  then %(#{TILDE} ls -F "$f")
   when 'paths' then %(#{TILDE} [ -f "$f" ] && #{viewer} "$f" || ls -F "$f" 2> /dev/null)
+  else              "#{SCRIPT.shellescape} context #{state.shellescape} {}"
   end
+end
+
+# The rows of the screen are as wide as the pane, so they wrap less at the
+# bottom
+def preview_window(provider)
+  CONTEXT.include?(provider) ? 'down,40%' : 'right,50%'
 end
 
 # Whether a provider has anything to offer. It stops at the first item, instead
@@ -478,15 +650,12 @@ end
 # place, so the pane fzf runs in stays open, and the cursor goes back to the top
 # as the items are not the same.
 def switch_actions(provider, state, providers)
-  write_state(state, provider, providers)
+  _, _, hidden = read_state(state)
+  write_state(state, provider, providers, hidden)
   actions = ["change-border-label(#{label(provider, ENV.fetch('FZF_QUERY', ''))})",
-             "change-header(#{header(provider, providers)})"]
-  actions +=
-    if (command = preview(provider))
-      ["change-preview(#{command})", 'change-preview-window(right,50%)']
-    else
-      ['change-preview-window(hidden)']
-    end
+             "change-header(#{header(provider, providers)})",
+             "change-preview(#{preview(provider, state)})",
+             "change-preview-window(#{preview_window(provider)}#{',hidden' if hidden})"]
   actions << "reload(#{SCRIPT.shellescape} list #{state.shellescape})" << 'first'
   actions.join('+')
 end
@@ -523,14 +692,14 @@ def clipboard(text)
   IO.popen(command || 'tmux load-buffer -w -', 'w') { |io| io.write(text) }
 end
 
-# The provider in use, and the ones to offer
+# The provider in use, the ones to offer, and whether the preview is hidden
 def read_state(path)
-  current, providers = File.read(path).lines.map(&:strip)
-  [current, providers.split]
+  current, providers, hidden = File.read(path).lines.map(&:strip)
+  [current, providers.split, hidden == 'hidden']
 end
 
-def write_state(path, current, providers)
-  File.write(path, "#{current}\n#{providers.join(' ')}\n")
+def write_state(path, current, providers, hidden = false)
+  File.write(path, "#{current}\n#{providers.join(' ')}\n#{'hidden' if hidden}\n")
 end
 
 # The word in front of the cursor, which the selection replaces. The row ends
@@ -588,7 +757,22 @@ when 'copy'
   halt "Copied #{items.length == 1 ? items.first : "#{items.length} items"}"
 when 'list'
   current, = read_state(ARGV[1])
+  save_screen(ARGV[1]) if CONTEXT.include?(current)
   print_items(current, ENV.fetch('FZF_QUERY', ''))
+  exit
+when 'toggle-preview'
+  current, providers, hidden = read_state(ARGV[1])
+  write_state(ARGV[1], current, providers, !hidden)
+  puts 'toggle-preview'
+  exit
+when 'context'
+  # The preview of an item of the screen
+  path = screen_file(ARGV[1])
+  exit unless File.exist?(path)
+
+  cursor, *rows = File.read(path).split("\n", -1)
+  puts context(rows, cursor.to_i, ARGV[2].to_s,
+               ENV.fetch('FZF_PREVIEW_LINES', '20').to_i, ENV.fetch('FZF_PREVIEW_COLUMNS', '80').to_i)
   exit
 when 'switch'
   state = ARGV[1]
@@ -646,18 +830,16 @@ options = ['--tmux', option('@fzf-complete-popup', '90%,70%'),
            '--scheme', 'history',
            '--no-separator', '--header-border', 'horizontal',
            '--border-label-pos', '2', '--color', 'label:blue',
-           '--highlight-line', '--preview-border', 'line', '--wrap=word',
+           '--highlight-line', '--preview-border', 'rounded', '--wrap=word',
            # The preview and the child commands below are bash
            '--with-shell', 'bash -c',
-           '--bind', 'ctrl-/:change-preview-window(down,50%|hidden|)',
+           # The preview stays hidden when the provider changes
+           '--bind', "ctrl-/:transform(#{SCRIPT.shellescape} toggle-preview #{state.path.shellescape})",
            '--border-label', label(provider, TOKEN),
            '--header', header(provider, providers),
-           '--query', TOKEN]
-options += if (command = preview(provider))
-             ['--preview', command, '--preview-window', 'right,50%']
-           else
-             ['--preview-window', 'hidden']
-           end
+           '--query', TOKEN,
+           '--preview', preview(provider, state.path),
+           '--preview-window', preview_window(provider)]
 # CTRL-T goes to the next provider, so that it can be pressed repeatedly
 options += ['--bind', "ctrl-t:transform(#{SCRIPT.shellescape} switch #{state.path.shellescape} next)"]
 # CTRL-O opens the item, and fzf comes back afterwards
@@ -680,9 +862,14 @@ end
 # reaches the end, so fzf is given nothing to read.
 options += ['--bind', "start:reload(#{SCRIPT.shellescape} list #{state.path.shellescape})"]
 command = "fzf #{options.map(&:shellescape).join(' ')} < /dev/null"
-selected = IO.popen(command, 'r') { |io| io.readlines.map(&:chomp) }
-current, = read_state(state.path)
-state.unlink
+begin
+  selected = IO.popen(command, 'r') { |io| io.readlines.map(&:chomp) }
+  current, = read_state(state.path)
+ensure
+  # The copy of the screen as well, when the script is interrupted
+  [screen_file(state.path), "#{screen_file(state.path)}.tmp"].each { |path| File.delete(path) if File.exist?(path) }
+  state.unlink
+end
 
 exit if selected.empty?
 

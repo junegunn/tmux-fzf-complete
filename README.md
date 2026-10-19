@@ -54,6 +54,9 @@ nothing is, and says so in a tmux message. <kbd>CTRL-R</kbd> lists again, from
 the directory in the query, or from the pane as it is now. The header is a row of
 labels, so clicking one of them does what it says.
 
+The preview shows a file, or for a URL or a sentence, the part of the screen it
+was found in, with the colors it had. <kbd>CTRL-/</kbd> hides or shows it.
+
 | Key | Provider | |
 | --- | -------- | - |
 | <kbd>ALT-F</kbd> | Files | the search starts at the directory in the query |
