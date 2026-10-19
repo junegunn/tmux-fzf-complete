@@ -78,6 +78,13 @@ class FzfCompleteTest < Minitest::Test
     assert_equal %w[https://example.com/edge2 https://example.com/edge/path https://example.com/short], urls
   end
 
+  def test_urls_end_at_backslash
+    show(<<~'TEXT')
+      "body": "https://issues.apache.org/jira/browse/HBASE-30473\n\nBackport from",
+    TEXT
+    assert_equal ['https://issues.apache.org/jira/browse/HBASE-30473'], urls
+  end
+
   def test_paths
     Dir.mktmpdir do |dir|
       Dir.chdir(dir) do

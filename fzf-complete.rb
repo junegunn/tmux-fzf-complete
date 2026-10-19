@@ -313,7 +313,8 @@ def print_paths(query, dirs)
   end
 end
 
-URL = %r{(?:https?|ftp|file|ssh|git)://[^\s<>|"'`]+}
+# A backslash is never in a URL, but starts an escape like \n in JSON
+URL = %r{(?:https?|ftp|file|ssh|git)://[^\s<>|"'`\\]+}
 # The start of a hyperlink, and the URL it points to
 LINK = %r{\e\]8;[^;\e\a]*;([^\e\a]*://[^\e\a]*)(?:\e\\|\a)}
 
@@ -328,7 +329,7 @@ def screen_links
 end
 
 # What can only be a part of a URL, and not a word of the text
-URL_PART = %r{\A[^\s<>|"'`]*[/.#?=&%][^\s<>|"'`]*\z}
+URL_PART = %r{\A[^\s<>|"'`\\]*[/.#?=&%][^\s<>|"'`\\]*\z}
 
 # The start of the next row, when it is the rest of a URL the program broke at
 # the end of the row
