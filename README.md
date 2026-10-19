@@ -46,8 +46,9 @@ in front of the cursor becomes the query, and the selection replaces it.
 ```
 
 Inside fzf, <kbd>CTRL-T</kbd> goes to the next provider, and these keys switch
-to one directly. <kbd>CTRL-O</kbd> opens what is under the cursor, a URL in the
-browser and anything else in `$EDITOR`, and comes back to the finder after.
+to one directly. <kbd>CTRL-O</kbd> opens what is selected, or what is under the
+cursor when nothing is, a URL in the browser and anything else in `$EDITOR`, and
+comes back to the finder after.
 <kbd>CTRL-Y</kbd> copies what is selected, or what is under the cursor when
 nothing is, and says so in a tmux message. <kbd>CTRL-R</kbd> lists again, from
 the directory in the query, or from the pane as it is now. The header is a row of

@@ -493,7 +493,7 @@ end
 def open_action(current, state)
   return nil unless OPENABLE.include?(current)
 
-  "execute(#{SCRIPT.shellescape} open #{state.shellescape} {})"
+  "execute(#{SCRIPT.shellescape} open #{state.shellescape} {+})"
 end
 
 def copy_action(state)
@@ -559,18 +559,21 @@ when 'open-action'
   puts open_action(current, ARGV[1])
   exit
 when 'open'
-  # CTRL-O, which fzf runs with the tty, so an editor can take the pane over
+  # CTRL-O, which fzf runs with the tty, so an editor can take the pane over.
+  # It opens the items that are marked, or the one under the cursor when none
+  # are.
   current, = read_state(ARGV[1])
-  item = ARGV[2].to_s
-  exit if item.empty?
+  items = ARGV[2..].reject(&:empty?)
+  exit if items.empty?
 
   if current == 'urls'
     opener = executable('open', 'xdg-open')
     halt 'No command to open a URL with' unless opener
 
-    system("#{opener} #{item.shellescape} > /dev/null 2>&1")
+    # xdg-open takes one URL
+    items.each { |item| system("#{opener} #{item.shellescape} > /dev/null 2>&1") }
   else
-    system("#{ENV.fetch('EDITOR', 'vim')} #{expand_tilde(item).shellescape}")
+    system("#{ENV.fetch('EDITOR', 'vim')} #{items.map { |item| expand_tilde(item).shellescape }.join(' ')}")
   end
   exit
 when 'copy'
