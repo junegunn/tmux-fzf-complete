@@ -39,8 +39,14 @@ def option(name, default)
   value.empty? ? default : value
 end
 
+# The first of the commands whose program is on $PATH. Not `command -v`, which
+# Ruby runs without a shell, and which is only a shell builtin on Linux.
 def executable(*commands)
-  commands.find { |c| `command -v #{c.split.first.shellescape}`.empty?.! }
+  dirs = ENV.fetch('PATH', '').split(File::PATH_SEPARATOR)
+  commands.find do |command|
+    name = command.split.first
+    dirs.any? { |dir| File.file?(path = File.join(dir, name)) && File.executable?(path) }
+  end
 end
 
 # Columns a character occupies. tmux counts columns, so the characters in
