@@ -746,7 +746,9 @@ when 'open'
     opener = executable('open', 'xdg-open')
     halt 'No command to open a URL with' unless opener
 
-    # xdg-open takes one URL
+    # xdg-open takes one URL. The browser it starts is not to be stopped when
+    # the pane fzf runs in closes.
+    opener = 'nohup xdg-open' if opener == 'xdg-open'
     items.each { |item| system("#{opener} #{item.shellescape} > /dev/null 2>&1") }
   else
     system("#{ENV.fetch('EDITOR', 'vim')} #{items.map { |item| expand_tilde(item).shellescape }.join(' ')}")
@@ -761,6 +763,12 @@ when 'copy'
 
   clipboard(text_of(items, current))
   halt "Copied #{items.length == 1 ? items.first : "#{items.length} items"}"
+when 'enter'
+  # Enter with --open opens the items, and closes fzf. What cannot be opened is
+  # inserted.
+  current, = read_state(ARGV[1])
+  puts(OPENABLE.include?(current) ? "#{open_action(current, ARGV[1])}+abort" : 'accept')
+  exit
 when 'list'
   current, = read_state(ARGV[1])
   save_screen(ARGV[1]) if CONTEXT.include?(current)
@@ -810,6 +818,8 @@ end
 
 # --- Start the finder -----------------------------------------------------
 
+# --open makes Enter open what is selected, instead of inserting it
+OPEN = ARGV.delete('--open')
 provider = ARGV.first || PROVIDERS.first
 halt "Unknown provider: #{provider}" unless PROVIDERS.include?(provider)
 
@@ -822,7 +832,8 @@ Dir.chdir(pane_path) if File.directory?(pane_path)
 # the row.
 cursor_y = display('#{cursor_y}').to_i
 row = normalize(tmux("capture-pane -p -N -t #{PANE} -S #{cursor_y} -E #{cursor_y}").chomp)
-TOKEN = word_before(row, display('#{cursor_x}').to_i)
+# Nothing is replaced when the selection is opened
+TOKEN = OPEN ? '' : word_before(row, display('#{cursor_x}').to_i)
 
 providers = active_providers
 state = Tempfile.new('fzf-complete')
@@ -850,6 +861,7 @@ options = ['--tmux', option('@fzf-complete-popup', '90%,70%'),
 options += ['--bind', "ctrl-t:transform(#{SCRIPT.shellescape} switch #{state.path.shellescape} next)"]
 # CTRL-O opens the item, and fzf comes back afterwards
 options += ['--bind', "ctrl-o:transform(#{SCRIPT.shellescape} open-action #{state.path.shellescape})"]
+options += ['--bind', "enter:transform(#{SCRIPT.shellescape} enter #{state.path.shellescape})"] if OPEN
 # CTRL-Y copies the items, and says so in a tmux message
 options += ['--bind', "ctrl-y:#{copy_action(state.path)}"]
 # CTRL-R lists again, from the directory in the query, or from the pane as it

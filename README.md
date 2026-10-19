@@ -73,11 +73,12 @@ Options
 Set them before the plugin is loaded, which with TPM is above the line that
 runs it.
 
-| Option                | Description                         | Default   |
-| --------------------- | ----------------------------------- | --------- |
-| `@fzf-complete-bind`  | Key to press after the prefix key   | `C-t`     |
-| `@fzf-complete-popup` | Size of the fzf pane (width,height) | `90%,70%` |
-| `@fzf-complete-lines` | Lines of the pane to scan           | `10000`   |
+| Option                   | Description                           | Default   |
+| ------------------------ | ------------------------------------- | --------- |
+| `@fzf-complete-bind`     | Key to press after the prefix key     | `C-t`     |
+| `@fzf-complete-url-bind` | Key after the prefix key to open URLs | (none)    |
+| `@fzf-complete-popup`    | Size of the fzf pane (width,height)   | `90%,70%` |
+| `@fzf-complete-lines`    | Lines of the pane to scan             | `10000`   |
 
 Files and directories come from `$FZF_CTRL_T_COMMAND` and `$FZF_ALT_C_COMMAND`
 when those are set, as in the shell integration of fzf, and from `fd` or `find`
@@ -90,6 +91,10 @@ A provider can be bound to a key of its own as well.
 bind-key u run-shell -b "TMUX_PANE=#{pane_id} \
   ~/github/tmux-fzf-complete/fzf-complete.rb urls"
 ```
+
+With `--open` after the provider, <kbd>Enter</kbd> opens what is selected
+instead of inserting it, and the query starts empty. This is what
+`@fzf-complete-url-bind` binds, for URLs.
 
 > [!TIP]
 > A program that draws a full screen, such as an AI agent, keeps no scrollback

@@ -11,6 +11,8 @@
 #   set -g @fzf-complete-bind C-t       # Key to press after the prefix key
 #   set -g @fzf-complete-popup 90%,70%  # Size of the fzf pane (width,height)
 #   set -g @fzf-complete-lines 10000    # Lines of the pane to scan
+#   set -g @fzf-complete-url-bind u     # Key to open a URL on the screen with
+#                                       # (not bound when unset)
 
 script=$(dirname "${BASH_SOURCE[0]:-$0}")/fzf-complete.rb
 script=$(readlink -f "$script" 2> /dev/null || /usr/bin/ruby --disable-gems -e 'puts File.expand_path(ARGV.first)' "$script" 2> /dev/null)
@@ -24,3 +26,8 @@ quoted="'${script//\'/\'\\\'\'}'"
 quoted=${quoted//#/##}
 
 tmux bind-key "${key:-C-t}" run-shell -b "TMUX_PANE=#{pane_id} $quoted files"
+
+url_key=$(tmux show-option -gqv @fzf-complete-url-bind)
+if [[ -n $url_key ]]; then
+  tmux bind-key "$url_key" run-shell -b "TMUX_PANE=#{pane_id} $quoted urls --open"
+fi
