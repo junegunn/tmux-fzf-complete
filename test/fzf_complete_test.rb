@@ -62,6 +62,23 @@ class FzfCompleteTest < Minitest::Test
                   "#{BASE}/opencost/usage-cost-mpc-prod1-tky.rules.yaml#L89"], urls
   end
 
+  def test_urls_broken_after_scheme
+    show(<<~'TEXT', width: 105)
+      and the proposed topology before passing this checkpoint.</p></td><td><ul><li><a href=\"https://
+      wiki.example.com/download/attachments/4491095462/message-03-hbase.ny-snapshot-query-
+      results.json\">Captured New Year traffic results</a></li><li><a href=\"https://
+      host1502.example.com:26010/master-status\">HBase RegionServer population</a></li></ul></td></tr></
+      tbody></table><h2>Unresolved Risks</h2><table class=\"wrapped\"><thead><tr><th scope=\"col\">#</th><th
+
+      A scheme alone at the end of a short row is not a URL: https://
+      nothing.here follows it
+    TEXT
+    assert available?('urls')
+    assert_equal ['https://host1502.example.com:26010/master-status',
+                  'https://wiki.example.com/download/attachments/4491095462/' \
+                  'message-03-hbase.ny-snapshot-query-results.json'], urls
+  end
+
   def test_urls_not_joined_with_next_row
     show(<<~TEXT, width: 130)
       Short row https://example.com/short

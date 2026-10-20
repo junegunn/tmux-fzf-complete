@@ -329,7 +329,9 @@ def print_paths(query, dirs)
 end
 
 # A backslash is never in a URL, but starts an escape like \n in JSON
-URL = %r{(?:https?|ftp|file|ssh|git)://[^\s<>|"'`\\]+}
+URL_CHAR = %r{[^\s<>|"'`\\]}
+SCHEME = %r{(?:https?|ftp|file|ssh|git)://}
+URL = /#{SCHEME}#{URL_CHAR}+/
 # The start of a hyperlink, and the URL it points to
 LINK = %r{\e\]8;[^;\e\a]*;([^\e\a]*://[^\e\a]*)(?:\e\\|\a)}
 
@@ -343,29 +345,34 @@ def screen_links
   screen_indices.lazy.flat_map { |index| link_rows[index] || [] }
 end
 
-# What can only be a part of a URL, and not a word of the text
-URL_PART = %r{\A[^\s<>|"'`\\]*[/.#?=&%][^\s<>|"'`\\]*\z}
+# What can only be a part of a URL, and not a word of the text, at the start
+# of a row. What follows it, as the quote that closes an attribute, is not.
+URL_PART = %r{\A#{URL_CHAR}*[/.#?=&%]#{URL_CHAR}*}
 
 # The start of the next row, when it is the rest of a URL the program broke at
 # the end of the row
 def url_rest(index, width)
   text = undecorate(rows[index + 1].to_s)
-  head = text[/\A\S+/]
-  head if head&.match?(URL_PART) && wrapped?(rows[index].rstrip, text, width)
+  head = text[URL_PART]
+  head if head && wrapped?(rows[index].rstrip, text, width)
 end
 
-# A URL at the end of a row is joined with the rest of it on the rows below
+# A URL at the end of a row is joined with the rest of it on the rows below. A
+# program can break it right after the scheme, which is kept only when the
+# rest is found.
 def text_urls(index, width)
   urls = rows[index].scan(URL)
-  return urls unless urls.any? && rows[index].rstrip.end_with?(urls.last)
+  tail = rows[index].rstrip[/#{SCHEME}#{URL_CHAR}*\z/]
+  return urls unless tail
 
+  urls.pop if urls.last == tail
   while (rest = url_rest(index, width))
-    urls[-1] += rest
+    tail += rest
     index += 1
     # The row goes on with the text after the URL
     break unless undecorate(rows[index]).rstrip == rest
   end
-  urls
+  tail.end_with?('://') ? urls : urls << tail
 end
 
 # The text of a link broken across rows is the start of its URL, and is left out
@@ -624,7 +631,8 @@ end
 # of building a list that may be thrown away.
 def available?(provider)
   case provider
-  when 'urls'      then screen.any? { |line| line.match?(URL) } || screen_links.any?
+  # A URL broken right after its scheme is found only with the next row
+  when 'urls'      then screen.any? { |line| line.match?(SCHEME) } || screen_links.any?
   when 'paths'     then path_candidates.any? { |word| File.exist?(expand_tilde(word)) }
   when 'sentences' then screen.any? { |line| sentence?(line) }
   else true
