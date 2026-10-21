@@ -621,10 +621,10 @@ def preview(provider, state)
   end
 end
 
-# The rows of the screen are as wide as the pane, so they wrap less at the
-# bottom
+# The rows of the screen are as wide as the pane, so they wrap less across
+# the whole width. Above the list, the popup is laid out as the screen is.
 def preview_window(provider)
-  CONTEXT.include?(provider) ? 'down,40%' : 'right,50%'
+  CONTEXT.include?(provider) ? 'up,40%' : 'right,50%'
 end
 
 # Whether a provider has anything to offer. It stops at the first item, instead
@@ -862,7 +862,9 @@ state.close
 write_state(state.path, provider, providers)
 
 options = ['--tmux', option('@fzf-complete-popup', '90%,70%'),
-           '--multi', '--layout', 'reverse', '--min-height', '10+',
+           # The item nearest to the cursor is at the bottom, next to the
+           # prompt, so the list goes up as the screen does
+           '--multi', '--min-height', '10+',
            # Items are ordered by how close to the cursor they were found, and
            # this scheme keeps that order instead of sorting by length
            '--scheme', 'history',

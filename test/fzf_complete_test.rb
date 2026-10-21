@@ -199,7 +199,7 @@ class FzfCompleteTest < Minitest::Test
   def test_hidden_preview_stays_hidden
     Tempfile.create('state') do |file|
       write_state(file.path, 'files', %w[files urls], true)
-      assert_includes switch_actions('urls', file.path, %w[files urls]), 'change-preview-window(down,40%,hidden)'
+      assert_includes switch_actions('urls', file.path, %w[files urls]), 'change-preview-window(up,40%,hidden)'
       assert_equal ['urls', %w[files urls], true], read_state(file.path)
 
       write_state(file.path, 'urls', %w[files urls])
