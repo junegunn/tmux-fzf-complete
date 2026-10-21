@@ -639,10 +639,6 @@ def available?(provider)
   end
 end
 
-def active_providers
-  PROVIDERS.select { |name| available?(name) }
-end
-
 # The providers, with the letter that switches to each of them underlined. The
 # one in use is bold, the rest are dimmed.
 # A single provider is offered with --open, and nothing switches it.
@@ -665,8 +661,13 @@ end
 # What fzf is told to do when a provider is switched to. The list is reloaded in
 # place, so the pane fzf runs in stays open, and the cursor goes back to the top
 # as the items are not the same.
+# The provider switched to is where the finder starts the next time it is
+# not given one
+LAST = '@fzf-complete-last-provider'
+
 def switch_actions(provider, state, providers)
-  _, _, hidden = read_state(state)
+  current, _, hidden = read_state(state)
+  tmux("set-option -g #{LAST} #{provider}") if provider != current
   write_state(state, provider, providers, hidden)
   actions = ["change-border-label(#{label(provider, ENV.fetch('FZF_QUERY', ''))})",
              "change-header(#{header(provider, providers)})",
@@ -830,7 +831,8 @@ end
 
 # --open makes Enter open what is selected, instead of inserting it
 OPEN = ARGV.delete('--open')
-provider = ARGV.first || PROVIDERS.first
+last = option(LAST, PROVIDERS.first)
+provider = ARGV.first || (PROVIDERS.include?(last) && available?(last) ? last : PROVIDERS.first)
 halt "Unknown provider: #{provider}" unless PROVIDERS.include?(provider)
 
 # Run in the working directory of the pane
@@ -851,7 +853,9 @@ if OPEN
   halt "No #{provider} on the screen" unless available?(provider)
   providers = [provider]
 else
-  providers = active_providers
+  # The one it starts with, even when it finds nothing, so that switching from
+  # it works
+  providers = PROVIDERS.select { |name| name == provider || available?(name) }
 end
 state = Tempfile.new('fzf-complete')
 state.close

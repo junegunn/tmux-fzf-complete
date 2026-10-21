@@ -25,7 +25,8 @@ key=$(tmux show-option -gqv @fzf-complete-bind)
 quoted="'${script//\'/\'\\\'\'}'"
 quoted=${quoted//#/##}
 
-tmux bind-key "${key:-C-t}" run-shell -b "TMUX_PANE=#{pane_id} $quoted files"
+# No provider is given, so that it starts with the one switched to last
+tmux bind-key "${key:-C-t}" run-shell -b "TMUX_PANE=#{pane_id} $quoted"
 
 url_key=$(tmux show-option -gqv @fzf-complete-url-bind)
 if [[ -n $url_key ]]; then

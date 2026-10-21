@@ -17,9 +17,11 @@ class FzfCompleteTest < Minitest::Test
     @width = width
   end
 
+  # The commands that change something are kept, to be checked
   def tmux(command)
-    rows = @text.lines.size
+    rows = @text.to_s.lines.size
     case command
+    when /set-option/         then (@changes ||= []) << command and ''
     when /capture-pane/       then "#{@text}\n"
     when /pane_width/         then "#{@width}\n"
     when /pane_height/        then "#{rows + 1}\n"
@@ -202,6 +204,16 @@ class FzfCompleteTest < Minitest::Test
 
       write_state(file.path, 'urls', %w[files urls])
       assert_includes switch_actions('files', file.path, %w[files urls]), 'change-preview-window(right,50%)+'
+    end
+  end
+
+  def test_switch_remembers_provider
+    Tempfile.create('state') do |file|
+      write_state(file.path, 'files', %w[files urls])
+      switch_actions('urls', file.path, %w[files urls])
+      # CTRL-R lists the same provider again
+      switch_actions('urls', file.path, %w[files urls])
+      assert_equal ['set-option -g @fzf-complete-last-provider urls'], @changes
     end
   end
 

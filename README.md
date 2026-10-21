@@ -39,7 +39,9 @@ Usage
 
 <kbd>PREFIX</kbd><kbd>CTRL-T</kbd> starts the file finder in a floating pane, in
 the working directory of the pane, or in a popup on tmux 3.6 or older. The word
-in front of the cursor becomes the query, and the selection replaces it.
+in front of the cursor becomes the query, and the selection replaces it. After
+you switch to another provider inside the finder, it starts with that one
+instead.
 
 ```
 ~/github/fzf-g      ->      ~/github/fzf-git.sh/README.md
