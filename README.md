@@ -57,7 +57,9 @@ the directory in the query, or from the pane as it is now. The header is a row o
 labels, so clicking one of them does what it says.
 
 The preview shows a file, or for a URL or a sentence, the part of the screen it
-was found in, with the colors it had. <kbd>CTRL-/</kbd> hides or shows it.
+was found in, with the colors it had. For a path, that part of the screen is
+shown above the list, next to the file. <kbd>CTRL-/</kbd> hides or shows the
+preview.
 
 | Key | Provider | |
 | --- | -------- | - |

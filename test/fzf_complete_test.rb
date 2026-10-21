@@ -188,8 +188,19 @@ class FzfCompleteTest < Minitest::Test
 
   def test_context_of_row_longer_than_preview
     rows = ["#{'x' * 200} https://a.com/end"]
-    assert_equal ['x' * 40, 'x' * 40, " \e[7mhttps://a.com/end\e[0m"],
+    assert_equal ['x' * 40] * 4 + [" \e[7mhttps://a.com/end\e[0m"],
                  context(rows, 1, 'https://a.com/end', 5, 40)
+  end
+
+  # The rows next to the item fill the rest, even when they do not fit whole
+  def test_context_with_part_of_row
+    rows = ["\e[32m#{'a' * 10}#{'b' * 10}#{'c' * 10}\e[0m", 'item here']
+    assert_equal ["\e[32m#{'b' * 10}", "#{'c' * 10}\e[0m\e[0m", "\e[7mitem\e[27m here\e[0m"],
+                 context(rows, 2, 'item', 3, 10)
+
+    rows = ['item here', 'd' * 10 + 'e' * 10 + 'f' * 10]
+    assert_equal ["\e[7mitem\e[27m here\e[0m", 'd' * 10, "#{'e' * 10}\e[0m"],
+                 context(rows, 0, 'item', 3, 10)
   end
 
   def test_context_of_item_not_on_screen
@@ -215,6 +226,24 @@ class FzfCompleteTest < Minitest::Test
       switch_actions('urls', file.path, %w[files urls])
       assert_equal ['set-option -g @fzf-complete-last-provider urls'], @changes
     end
+  end
+
+  def test_footer_only_for_paths
+    Tempfile.create('state') do |file|
+      write_state(file.path, 'urls', %w[urls paths])
+      assert_includes switch_actions('paths', file.path, %w[urls paths]), '+rebind(focus)+'
+      assert_includes switch_actions('urls', file.path, %w[urls paths]), '+unbind(focus)+change-footer()+'
+    end
+  end
+
+  def test_footer_width
+    ENV['FZF_COLUMNS'] = '120'
+    assert_equal 115, footer_width
+    ENV['FZF_PREVIEW_COLUMNS'] = '56'
+    assert_equal 55, footer_width
+  ensure
+    ENV.delete('FZF_COLUMNS')
+    ENV.delete('FZF_PREVIEW_COLUMNS')
   end
 
   def test_word_before_cursor

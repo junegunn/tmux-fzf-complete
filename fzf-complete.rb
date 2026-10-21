@@ -435,6 +435,20 @@ end
 
 # Providers whose preview shows the rows around the item
 CONTEXT = %w[urls sentences].freeze
+# Providers that show the rows around the item in the footer, above the list,
+# as their preview shows the file
+FOOTER = %w[paths].freeze
+FOOTER_LINES = 5
+
+# The footer is as wide as the list, which the preview, its border, and the
+# pointer and the marker in front of each line take columns from, and its own
+# border too. fzf does not tell the width of the list.
+def footer_width
+  width = ENV.fetch('FZF_COLUMNS', '80').to_i
+  preview = ENV.fetch('FZF_PREVIEW_COLUMNS', nil)
+  width -= preview.to_i + 4 if preview
+  width - 5
+end
 
 # An escape sequence of a color or a hyperlink
 ESCAPE = %r{\e\][^\e\a]*(?:\e\\|\a)|\e\[[0-9;:?<=>]*[ -/]*[@-~]|\e.}m
@@ -567,7 +581,7 @@ def context(rows, cursor, item, height, width)
   # A row too long for the preview is shown from around the line the item is on
   if shown.size > height
     _, start = render(rows[top], found[top], width)
-    return shown.drop([start.to_i - (height / 2), 0].max)
+    return shown.drop([[start.to_i - (height / 2), shown.size - height].min, 0].max).first(height)
   end
 
   loop do
@@ -583,6 +597,21 @@ def context(rows, cursor, item, height, width)
       added = true
     end
     break unless added
+  end
+
+  # The part of the next row that fits, the end of the one above, with the
+  # colors of the lines left out, and the start of the one below
+  room = height - shown.size
+  if room.positive? && top.positive?
+    more = lines.(top - 1)
+    part = more.last(room)
+    part[0] = more[0...-room].join.scan(ESCAPE).join + part[0]
+    shown = part + shown
+  end
+  room = height - shown.size
+  if room.positive? && bottom < rows.size - 1
+    shown += lines.(bottom + 1).first(room)
+    shown[-1] += "\e[0m"
   end
   shown
 end
@@ -665,6 +694,12 @@ end
 # not given one
 LAST = '@fzf-complete-last-provider'
 
+# The footer is updated on focus only for the providers that show one, so that
+# no process starts on every move for the others
+def footer_actions(provider)
+  FOOTER.include?(provider) ? 'rebind(focus)' : 'unbind(focus)+change-footer()'
+end
+
 def switch_actions(provider, state, providers)
   current, _, hidden = read_state(state)
   tmux("set-option -g #{LAST} #{provider}") if provider != current
@@ -672,7 +707,8 @@ def switch_actions(provider, state, providers)
   actions = ["change-border-label(#{label(provider, ENV.fetch('FZF_QUERY', ''))})",
              "change-header(#{header(provider, providers)})",
              "change-preview(#{preview(provider, state)})",
-             "change-preview-window(#{preview_window(provider)}#{',hidden' if hidden})"]
+             "change-preview-window(#{preview_window(provider)}#{',hidden' if hidden})",
+             footer_actions(provider)]
   actions << "reload(#{SCRIPT.shellescape} list #{state.shellescape})" << 'first'
   actions.join('+')
 end
@@ -782,7 +818,7 @@ when 'enter'
   exit
 when 'list'
   current, = read_state(ARGV[1])
-  save_screen(ARGV[1]) if CONTEXT.include?(current)
+  save_screen(ARGV[1]) if (CONTEXT + FOOTER).include?(current)
   print_items(current, ENV.fetch('FZF_QUERY', ''))
   exit
 when 'toggle-preview'
@@ -790,14 +826,22 @@ when 'toggle-preview'
   write_state(ARGV[1], current, providers, !hidden)
   puts 'toggle-preview'
   exit
-when 'context'
-  # The preview of an item of the screen
+when 'context', 'footer'
+  # The preview, or the footer, of an item of the screen
   path = screen_file(ARGV[1])
   exit unless File.exist?(path)
 
   cursor, *rows = File.read(path).split("\n", -1)
-  puts context(rows, cursor.to_i, ARGV[2].to_s,
-               ENV.fetch('FZF_PREVIEW_LINES', '20').to_i, ENV.fetch('FZF_PREVIEW_COLUMNS', '80').to_i)
+  height, width =
+    if ARGV.first == 'footer'
+      [FOOTER_LINES, footer_width]
+    else
+      [ENV.fetch('FZF_PREVIEW_LINES', '20').to_i, ENV.fetch('FZF_PREVIEW_COLUMNS', '80').to_i]
+    end
+  lines = context(rows, cursor.to_i, ARGV[2].to_s, height, width)
+  # The footer keeps its height when there are fewer lines to show
+  lines += [''] * (height - lines.size) if ARGV.first == 'footer' && lines.any?
+  puts lines
   exit
 when 'switch'
   state = ARGV[1]
@@ -870,7 +914,7 @@ options = ['--tmux', option('@fzf-complete-popup', '90%,70%'),
            '--scheme', 'history',
            '--no-separator', '--header-border', 'horizontal',
            '--border-label-pos', '2', '--color', 'label:blue',
-           '--highlight-line', '--preview-border', 'rounded', '--wrap=word',
+           '--highlight-line', '--preview-border', 'rounded', '--footer-border', 'rounded', '--wrap=word',
            # The preview and the child commands below are bash
            '--with-shell', 'bash -c',
            # The preview stays hidden when the provider changes
@@ -901,7 +945,9 @@ end
 # Piping it in would make this script relay the rest of a long listing before
 # it could insert anything, and reading the input of a run-shell command never
 # reaches the end, so fzf is given nothing to read.
-options += ['--bind', "start:reload(#{SCRIPT.shellescape} list #{state.path.shellescape})"]
+options += ['--bind', "start:reload(#{SCRIPT.shellescape} list #{state.path.shellescape})+#{footer_actions(provider)}"]
+# Bound from the start, as fzf sends no focus event when it is bound later
+options += ['--bind', "focus:bg-transform-footer(#{SCRIPT.shellescape} footer #{state.path.shellescape} {})"]
 command = "fzf #{options.map(&:shellescape).join(' ')} < /dev/null"
 begin
   selected = IO.popen(command, 'r') { |io| io.readlines.map(&:chomp) }
