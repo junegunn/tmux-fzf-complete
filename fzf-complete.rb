@@ -167,6 +167,12 @@ def screen
   @screen ||= screen_indices.map { |index| rows[index] }
 end
 
+# The items of a row in the order they are near the cursor, which on a row
+# above it is from the end
+def near_first(index, items)
+  index < cursor_row ? items.reverse : items
+end
+
 # The punctuation a word can be written in the middle of is not part of it,
 # and neither is a name in front of a parenthesis that the word does not close,
 # as in Read(README.md)
@@ -215,7 +221,7 @@ end
 
 # Lazy, so that a check for the first item does not walk the whole screen
 def screen_words
-  screen_indices.lazy.flat_map { |index| spaced_paths(index) + rows[index].split }
+  screen_indices.lazy.flat_map { |index| near_first(index, spaced_paths(index)) + near_first(index, rows[index].split) }
                 .map { |word| trim(word) }.select { |word| word.match?(/[[:alnum:]]/) }
 end
 
@@ -375,13 +381,23 @@ def text_urls(index, width)
   tail.end_with?('://') ? urls : urls << tail
 end
 
+# The URLs of a row in the order they are on it. A link is where its text is,
+# and a URL that goes on to the next row is at the end.
+def by_position(index, links, shown)
+  spans = links.empty? ? [] : parse(escaped_rows[index])[1]
+  found = links.map { |url| [spans.find { |link,| link == url }&.at(1) || 0, url] } +
+          shown.map { |url| [rows[index].index(url) || rows[index].size, url] }
+  found.each_with_index.sort_by { |(position, _), order| [position, order] }.map { |(_, url), _| url }
+end
+
 # The text of a link broken across rows is the start of its URL, and is left out
 def urls
   width = display('#{pane_width}').to_i
   screen_indices.flat_map do |index|
     links = link_rows[index] || []
     shown = text_urls(index, width).map { |url| url.sub(/[)'"`\]},;:.!?]+\z/, '') }
-    links + shown.reject { |url| links.any? { |link| link.start_with?(url) } }
+    shown = shown.reject { |url| links.any? { |link| link.start_with?(url) } }
+    near_first(index, by_position(index, links, shown))
   end.uniq
 end
 
@@ -412,11 +428,15 @@ end
 
 # A paragraph of one word is not text, but a sentence of one word in a longer
 # paragraph is, as in "Done."
+# Nearest to the cursor first, which in a paragraph above it is the last
+# sentence
 def sentences
-  (paragraphs(rows_above).reverse + paragraphs(rows_below))
-    .map { |para| clean(para) }
-    .select { |para| para.match?(/[[:alpha:]]/) && para.include?(' ') }
-    .flat_map { |para| para.split(/(?<=[.!?])\s+(?=["'(\[]?[A-Z])/) }
+  split = lambda do |paras, above|
+    paras.map { |para| clean(para) }
+         .select { |para| para.match?(/[[:alpha:]]/) && para.include?(' ') }
+         .flat_map { |para| para.split(/(?<=[.!?])\s+(?=["'(\[]?[A-Z])/).then { |list| above ? list.reverse : list } }
+  end
+  (split.(paragraphs(rows_above).reverse, true) + split.(paragraphs(rows_below), false))
     .select { |line| line.match?(/[[:alpha:]]/) }
     .uniq
 end

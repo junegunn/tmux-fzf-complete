@@ -97,7 +97,8 @@ class FzfCompleteTest < Minitest::Test
 
   def test_urls_in_colors
     show("\e[32mhttps://a.com/x\e[0m and \e[1mhttps://a.com/y\e[0m\n")
-    assert_equal %w[https://a.com/x https://a.com/y], urls
+    # The one nearer to the cursor, at the end of the row, comes first
+    assert_equal %w[https://a.com/y https://a.com/x], urls
   end
 
   def test_urls_end_at_backslash
@@ -129,6 +130,16 @@ class FzfCompleteTest < Minitest::Test
     end
   end
 
+  def test_paths_in_row_nearest_first
+    Dir.mktmpdir do |dir|
+      Dir.chdir(dir) do
+        FileUtils.touch(%w[a.txt b.txt c.txt])
+        show("a.txt and b.txt\nc.txt\n")
+        assert_equal %w[c.txt b.txt a.txt], screen_paths
+      end
+    end
+  end
+
   def test_sentences
     show(<<~TEXT)
       ● The quick brown fox jumps over the lazy dog. It was a sunny day in the park
@@ -146,9 +157,9 @@ class FzfCompleteTest < Minitest::Test
     assert_equal ['A quote that the program wraps because it is too long to fit on a single row of the pane.',
                   'Second item.',
                   'First item of the list, which is long enough that the program has to wrap it onto the next row.',
-                  'The quick brown fox jumps over the lazy dog.',
+                  'Nobody expected what came next!',
                   'It was a sunny day in the park and everyone was happy.',
-                  'Nobody expected what came next!'], sentences
+                  'The quick brown fox jumps over the lazy dog.'], sentences
   end
 
   # Without the empty rows at the bottom
