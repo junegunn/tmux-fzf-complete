@@ -41,7 +41,7 @@ Usage
 the working directory of the pane, or in a popup on tmux 3.6 or older. The word
 in front of the cursor becomes the query, and the selection replaces it. After
 you switch to another provider inside the finder, it starts with that one
-instead.
+instead, unless there is a word in front of the cursor to complete.
 
 ```
 ~/github/fzf-g      ->      ~/github/fzf-git.sh/README.md

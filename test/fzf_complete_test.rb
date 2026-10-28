@@ -22,6 +22,7 @@ class FzfCompleteTest < Minitest::Test
     rows = @text.to_s.lines.size
     case command
     when /set-option/         then (@changes ||= []) << command and ''
+    when /show-option.*last/  then @last.to_s
     when /capture-pane/       then "#{@text}\n"
     when /pane_width/         then "#{@width}\n"
     when /pane_height/        then "#{rows + 1}\n"
@@ -255,6 +256,14 @@ class FzfCompleteTest < Minitest::Test
   ensure
     ENV.delete('FZF_COLUMNS')
     ENV.delete('FZF_PREVIEW_COLUMNS')
+  end
+
+  def test_start_provider
+    show("https://a.com/x\n")
+    assert_equal 'files', start_provider('')
+    @last = 'urls'
+    assert_equal 'urls', start_provider('')
+    assert_equal 'files', start_provider('~/git')
   end
 
   def test_word_before_cursor

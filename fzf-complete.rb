@@ -787,6 +787,13 @@ def word_before(row, cursor_x)
   before[/[^[:space:]]*\z/].to_s.sub(/\A#{DECORATION}+/, '').delete_prefix('@')
 end
 
+# The provider to start with when none is given. A word in front of the cursor
+# is the start of a path, and with none, it is the one switched to last.
+def start_provider(word)
+  last = option(LAST, PROVIDERS.first)
+  word.empty? && PROVIDERS.include?(last) && available?(last) ? last : PROVIDERS.first
+end
+
 # The functions above are what the tests load
 return unless __FILE__ == $PROGRAM_NAME
 
@@ -895,9 +902,7 @@ end
 
 # --open makes Enter open what is selected, instead of inserting it
 OPEN = ARGV.delete('--open')
-last = option(LAST, PROVIDERS.first)
-provider = ARGV.first || (PROVIDERS.include?(last) && available?(last) ? last : PROVIDERS.first)
-halt "Unknown provider: #{provider}" unless PROVIDERS.include?(provider)
+halt "Unknown provider: #{ARGV.first}" unless ARGV.first.nil? || PROVIDERS.include?(ARGV.first)
 
 # Run in the working directory of the pane
 pane_path = display('#{pane_current_path}')
@@ -910,6 +915,7 @@ cursor_y = display('#{cursor_y}').to_i
 row = normalize(tmux("capture-pane -p -N -t #{PANE} -S #{cursor_y} -E #{cursor_y}").chomp)
 # Nothing is replaced when the selection is opened
 TOKEN = OPEN ? '' : word_before(row, display('#{cursor_x}').to_i)
+provider = ARGV.first || start_provider(TOKEN)
 
 # --open offers only the provider it is given, so that Enter always does what
 # the key it is bound to is for
