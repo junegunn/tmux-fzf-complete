@@ -638,11 +638,13 @@ end
 
 # --- How the finder looks -------------------------------------------------
 
+# The script that comes with fzf shows images as well, and bat or cat is used
+# when it is not on $PATH
 def viewer
-  @viewer ||=
-    executable('bat', 'batcat')
-    &.then { |bat| "#{bat} --style=#{ENV.fetch('BAT_STYLE', 'numbers')} --color=always --pager=never" } ||
-    'cat'
+  @viewer ||= executable('fzf-preview.sh') || begin
+    bat = executable('bat', 'batcat')
+    bat ? "#{bat} --style=#{ENV.fetch('BAT_STYLE', 'numbers')} --color=always --pager=never" : 'cat'
+  end
 end
 
 # An action argument ends at a parenthesis, so a label cannot hold one
