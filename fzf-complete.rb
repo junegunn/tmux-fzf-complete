@@ -407,18 +407,29 @@ def expand_tilde(path)
   path.start_with?('~/') ? File.join(Dir.home, path.delete_prefix('~/')) : path
 end
 
+# A path and the line number after it, as in path:123
+def split_line(item)
+  match = item.match(/\A(.+):(\d+)\z/)
+  match ? match.captures : [item, nil]
+end
+
 # A word is offered as a path only when it is one, which is what tells a real
 # name from something shaped like it, such as 12/12 or v2.42.0. A line number
-# after it, as in the output of a compiler, is dropped.
+# after it, as in the output of a compiler or a coding agent, is kept, and a
+# column number after that is dropped.
 def path_candidates
   screen_words.chain(screen_broken_words).lazy
               .reject { |word| word.include?('://') }
-              .map { |word| word.sub(/:\d+(?::\d+)?\z/, '') }
+              .map { |word| word.sub(/(:\d+):\d+\z/, '\1') }
               .reject { |word| word.length < 2 || %w[.. ~/].include?(word) }
 end
 
+def path?(word)
+  File.exist?(expand_tilde(split_line(word).first))
+end
+
 def screen_paths
-  path_candidates.select { |word| File.exist?(expand_tilde(word)) }.uniq.to_a
+  path_candidates.select { |word| path?(word) }.uniq.to_a
 end
 
 def sentence?(line)
@@ -663,11 +674,24 @@ end
 # it puts in place of {}, so the preview command has to expand it itself
 TILDE = 'f={}; f=${f/#\~/$HOME};'
 
+# The file with the line highlighted, l, after it is taken off the end of f
+def view_line
+  case viewer
+  when 'fzf-preview.sh' then %(#{viewer} "$f${l:+:$l}")
+  when 'cat'            then 'cat "$f"'
+  else                       %(#{viewer} ${l:+--highlight-line=$l} "$f")
+  end
+end
+
+# The line number of a path, without a parenthesis, which would end the
+# argument of change-preview
+LINE = 'l=${f##*:}; [[ $f == *:* && -n $l && -z ${l//[0-9]} ]] && f=${f%:*} || l=;'
+
 def preview(provider, state)
   case provider
   when 'files' then %(#{TILDE} [ -f "$f" ] && #{viewer} "$f" || ls -F "$f")
   when 'dirs'  then %(#{TILDE} ls -F "$f")
-  when 'paths' then %(#{TILDE} [ -f "$f" ] && #{viewer} "$f" || ls -F "$f" 2> /dev/null)
+  when 'paths' then %(#{TILDE} #{LINE} [ -f "$f" ] && #{view_line} || ls -F "$f" 2> /dev/null)
   else              "#{SCRIPT.shellescape} context #{state.shellescape} {}"
   end
 end
@@ -675,7 +699,11 @@ end
 # The rows of the screen are as wide as the pane, so they wrap less across
 # the whole width. Above the list, the popup is laid out as the screen is.
 def preview_window(provider)
-  CONTEXT.include?(provider) ? 'up,40%' : 'right,50%'
+  return 'up,40%' if CONTEXT.include?(provider)
+
+  # The line of a path in the middle. {2} is the line number, after the first
+  # colon, and nothing when there is none.
+  provider == 'paths' ? 'right,50%,+{2}-/2' : 'right,50%'
 end
 
 # Whether a provider has anything to offer. It stops at the first item, instead
@@ -684,7 +712,7 @@ def available?(provider)
   case provider
   # A URL broken right after its scheme is found only with the next row
   when 'urls'      then screen.any? { |line| line.match?(SCHEME) } || screen_links.any?
-  when 'paths'     then path_candidates.any? { |word| File.exist?(expand_tilde(word)) }
+  when 'paths'     then path_candidates.any? { |word| path?(word) }
   when 'sentences' then screen.any? { |line| sentence?(line) }
   else true
   end
@@ -796,6 +824,23 @@ def start_provider(word)
   word.empty? && PROVIDERS.include?(last) && available?(last) ? last : PROVIDERS.first
 end
 
+# The editor with the items, at the line of each when it is given. Most editors
+# take +LINE, and the others take the path with the line after it.
+def editor_command(items, lines)
+  editor = ENV.fetch('EDITOR', 'vim')
+  name = File.basename(editor.split.first.to_s)
+  args = items.flat_map do |item|
+    path, line = lines ? split_line(item) : [item, nil]
+    path = expand_tilde(path)
+    if line.nil? then [path]
+    elsif %w[code cursor codium windsurf].include?(name) then ['-g', "#{path}:#{line}"]
+    elsif %w[hx helix].include?(name) then ["#{path}:#{line}"]
+    else ["+#{line}", path]
+    end
+  end
+  "#{editor} #{args.map(&:shellescape).join(' ')}"
+end
+
 # The functions above are what the tests load
 return unless __FILE__ == $PROGRAM_NAME
 
@@ -827,7 +872,7 @@ when 'open'
     opener = 'nohup xdg-open' if opener == 'xdg-open'
     items.each { |item| system("#{opener} #{item.shellescape} > /dev/null 2>&1") }
   else
-    system("#{ENV.fetch('EDITOR', 'vim')} #{items.map { |item| expand_tilde(item).shellescape }.join(' ')}")
+    system(editor_command(items, current == 'paths'))
   end
   exit
 when 'copy'
@@ -945,6 +990,9 @@ options = ['--tmux', option('@fzf-complete-popup', '90%,70%'),
            '--highlight-line', '--preview-border', 'rounded', '--footer-border', 'rounded', '--wrap=word',
            # The preview and the child commands below are bash
            '--with-shell', 'bash -c',
+           # Splits path:123 into fields for the scroll offset of the preview.
+           # Nothing is matched by field.
+           '--delimiter', ':',
            # The preview stays hidden when the provider changes
            '--bind', "ctrl-/:transform(#{SCRIPT.shellescape} toggle-preview #{state.path.shellescape})",
            '--border-label', label(provider, TOKEN),

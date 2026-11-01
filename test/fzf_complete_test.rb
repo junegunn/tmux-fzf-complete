@@ -125,7 +125,7 @@ class FzfCompleteTest < Minitest::Test
           The file is in very/long/directory/
           name/file.txt and nowhere else
         TEXT
-        assert_equal ['very/long/directory/', 'my docs/notes.txt', 'src/lib/util.rb', 'src/main.rb',
+        assert_equal ['very/long/directory/', 'my docs/notes.txt', 'src/lib/util.rb', 'src/main.rb:12',
                       'README.md', 'very/long/directory/name/file.txt'], screen_paths
       end
     end
@@ -139,6 +139,22 @@ class FzfCompleteTest < Minitest::Test
         assert_equal %w[c.txt b.txt a.txt], screen_paths
       end
     end
+  end
+
+  def test_editor_at_line
+    assert_equal ['src/main.rb', '12'], split_line('src/main.rb:12')
+    assert_equal ['src/main.rb', nil], split_line('src/main.rb')
+
+    ENV['EDITOR'] = 'nvim'
+    assert_equal "nvim +12 src/main.rb README.md", editor_command(%w[src/main.rb:12 README.md], true)
+    ENV['EDITOR'] = '/usr/local/bin/code --wait'
+    assert_equal '/usr/local/bin/code --wait -g src/main.rb:12', editor_command(%w[src/main.rb:12], true)
+    ENV['EDITOR'] = 'hx'
+    assert_equal 'hx src/main.rb:12', editor_command(%w[src/main.rb:12], true)
+    # A file, not a path on the screen, is not given a line
+    assert_equal 'hx a:1', editor_command(%w[a:1], false)
+  ensure
+    ENV.delete('EDITOR')
   end
 
   def test_sentences

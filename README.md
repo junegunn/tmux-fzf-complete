@@ -61,6 +61,10 @@ was found in, with the colors it had. For a path, that part of the screen is
 shown above the list, next to the file. <kbd>CTRL-/</kbd> hides or shows the
 preview.
 
+A path with a line number after it, as a compiler or a coding agent prints it
+(`src/main.rb:12`), is listed with the line number. The preview highlights that
+line, and <kbd>CTRL-O</kbd> opens the file at it.
+
 | Key | Provider | |
 | --- | -------- | - |
 | <kbd>ALT-F</kbd> | Files | the search starts at the directory in the query |
