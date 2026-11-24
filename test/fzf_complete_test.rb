@@ -11,10 +11,11 @@ require_relative '../fzf-complete'
 class FzfCompleteTest < Minitest::Test
   BASE = 'https://git.example.com/org/charts/blob/8f44f20964d7ec7e8b0603bc184b770afa358880/custom'
 
-  # A pane that shows the text, with the cursor on an empty row below it
-  def show(text, width: 80)
+  # The cursor defaults to an empty row below the text
+  def show(text, width: 80, cursor: nil)
     @text = text
     @width = width
+    @cursor = cursor
   end
 
   # The commands that change something are kept, to be checked
@@ -26,7 +27,7 @@ class FzfCompleteTest < Minitest::Test
     when /capture-pane/       then "#{@text}\n"
     when /pane_width/         then "#{@width}\n"
     when /pane_height/        then "#{rows + 1}\n"
-    when /cursor_y/           then "#{rows}\n"
+    when /cursor_y/           then "#{@cursor || rows}\n"
     else ''
     end
   end
@@ -125,8 +126,8 @@ class FzfCompleteTest < Minitest::Test
           The file is in very/long/directory/
           name/file.txt and nowhere else
         TEXT
-        assert_equal ['very/long/directory/', 'my docs/notes.txt', 'src/lib/util.rb', 'src/main.rb:12',
-                      'README.md', 'very/long/directory/name/file.txt'], screen_paths
+        assert_equal ['very/long/directory/name/file.txt', 'very/long/directory/', 'my docs/notes.txt',
+                      'src/lib/util.rb', 'src/main.rb:12', 'README.md'], screen_paths
       end
     end
   end
@@ -137,6 +138,51 @@ class FzfCompleteTest < Minitest::Test
         FileUtils.touch(%w[a.txt b.txt c.txt])
         show("a.txt and b.txt\nc.txt\n")
         assert_equal %w[c.txt b.txt a.txt], screen_paths
+      end
+    end
+  end
+
+  def test_wrapped_path_uses_nearest_occurrence
+    Dir.mktmpdir do |dir|
+      Dir.chdir(dir) do
+        path = 'config/beta-dr-relation-kks-01-hbase/vars.yml'
+        FileUtils.mkdir_p(File.dirname(path))
+        FileUtils.touch([path, 'older.txt', 'nearby.txt'])
+        show(<<~TEXT)
+          #{path}:76
+          older.txt
+          nearby.txt (config/beta-dr-relation-
+            kks-01-hbase/vars.yml:76).
+        TEXT
+        assert_equal ["#{path}:76", 'nearby.txt', 'older.txt'], screen_paths
+      end
+    end
+  end
+
+  def test_wrapped_paths_below_cursor_keep_row_order
+    Dir.mktmpdir do |dir|
+      Dir.chdir(dir) do
+        FileUtils.mkdir_p('config')
+        FileUtils.touch(%w[above.txt first.txt last.txt config/vars.yml])
+        show(<<~TEXT, cursor: 1)
+          above.txt
+          input
+          first.txt (config/vars.
+            yml:76).
+          last.txt
+        TEXT
+        assert_equal %w[above.txt first.txt config/vars.yml:76 last.txt], screen_paths
+      end
+    end
+  end
+
+  def test_wrapped_paths_do_not_include_cursor_row
+    Dir.mktmpdir do |dir|
+      Dir.chdir(dir) do
+        FileUtils.mkdir_p('config')
+        FileUtils.touch(%w[config/vars.yml other.txt])
+        show("config/vars.\nyml\nother.txt\n", cursor: 1)
+        assert_equal ['other.txt'], screen_paths
       end
     end
   end

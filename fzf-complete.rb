@@ -221,8 +221,12 @@ end
 
 # Lazy, so that a check for the first item does not walk the whole screen
 def screen_words
-  screen_indices.lazy.flat_map { |index| near_first(index, spaced_paths(index)) + near_first(index, rows[index].split) }
-                .map { |word| trim(word) }.select { |word| word.match?(/[[:alnum:]]/) }
+  screen_indices.lazy.flat_map do |index|
+    words = rows[index].split
+    # Keep a wrapped path at the end of its starting row
+    words.concat(broken_words(rows[index, 2])) unless index + 1 == cursor_row
+    near_first(index, spaced_paths(index)) + near_first(index, words)
+  end.map { |word| trim(word) }.select { |word| word.match?(/[[:alnum:]]/) }
 end
 
 # A path too long for the row it is on is broken across two rows, so the end
@@ -236,10 +240,6 @@ def broken_words(source)
     head = undecorate(second)[/\A\S+/]
     trim("#{tail}#{head}") if head
   end
-end
-
-def screen_broken_words
-  @screen_broken_words ||= broken_words(rows_above).reverse + broken_words(rows_below)
 end
 
 # Whether the program ran out of room on the row and put the rest on the next
@@ -418,8 +418,7 @@ end
 # after it, as in the output of a compiler or a coding agent, is kept, and a
 # column number after that is dropped.
 def path_candidates
-  screen_words.chain(screen_broken_words).lazy
-              .reject { |word| word.include?('://') }
+  screen_words.reject { |word| word.include?('://') }
               .map { |word| word.sub(/(:\d+):\d+\z/, '\1') }
               .reject { |word| word.length < 2 || %w[.. ~/].include?(word) }
 end
